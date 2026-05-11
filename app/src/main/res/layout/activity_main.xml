@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <!-- 1. Map container (Plein écran) -->
+    <FrameLayout
+        android:id="@+id/mapContainer"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <!-- 2. BOUTON INFO (Haut Droite) -->
+    <LinearLayout
+        android:id="@+id/btnInfo"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:layout_marginEnd="16dp"
+        android:elevation="6dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:layout_marginTop="48dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <TextView
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:text="i"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold|italic"
+            android:textSize="20sp"
+            android:gravity="center"
+            android:background="@drawable/btn_circle_background"
+            android:backgroundTint="#444444" />
+    </LinearLayout>
+
+    <!-- 3. BLOC ACTIONS (Profil et Centrer - Bas Droite) -->
+    <LinearLayout
+        android:id="@+id/rightActionsContainer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="16dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toTopOf="@+id/bottomBar">
+
+        <!-- Bouton Profil (Dénivelé) -->
+        <LinearLayout
+            android:id="@+id/btnElevation"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="6dp"
+            android:layout_marginBottom="8dp">
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/ic_btn_elevation"
+                android:background="@drawable/btn_circle_background"
+                android:backgroundTint="#3A2A0A"
+                android:padding="10dp" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Profil"
+                android:textColor="#B0BEC5"
+                android:textSize="9sp" />
+        </LinearLayout>
+
+        <!-- Bouton Centrer -->
+        <LinearLayout
+            android:id="@+id/btnCenter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="6dp">
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/ic_btn_center"
+                android:background="@drawable/btn_circle_background"
+                android:backgroundTint="#2A1F3A"
+                android:padding="10dp" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Centrer"
+                android:textColor="#B0BEC5"
+                android:textSize="9sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 4. BARRE DU BAS (Menu principal) -->
+    <LinearLayout
+        android:id="@+id/bottomBar"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        android:gravity="center_vertical"
+        android:background="@drawable/bottom_bar_background"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <!-- Importer -->
+        <LinearLayout
+            android:id="@+id/btnImportGpx"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center">
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/ic_btn_import"
+                android:background="@drawable/btn_circle_background"
+                android:backgroundTint="#1E3A5F"
+                android:padding="10dp" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Importer"
+                android:textColor="#B0BEC5"
+                android:textSize="9sp" />
+        </LinearLayout>
+
+        <!-- Trace -->
+        <LinearLayout
+            android:id="@+id/btnSelectTrace"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center">
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/ic_btn_trace"
+                android:background="@drawable/btn_circle_background"
+                android:backgroundTint="#1B4332"
+                android:padding="10dp" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Trace"
+                android:textColor="#B0BEC5"
+                android:textSize="9sp" />
+        </LinearLayout>
+
+        <!-- Suivi -->
+        <LinearLayout
+            android:id="@+id/btnFollow"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center">
+            <ImageView
+                android:id="@+id/btnFollowIcon"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/ic_btn_play"
+                android:background="@drawable/btn_circle_background"
+                android:backgroundTint="#1A3A1A"
+                android:padding="10dp" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Suivi"
+                android:textColor="#B0BEC5"
+                android:textSize="9sp" />
+        </LinearLayout>
+
+        <!-- Enregistrer -->
+        <LinearLayout
+            android:id="@+id/btnRecord"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center">
+            <ImageView
+                android:id="@+id/btnRecordIcon"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/ic_btn_record"
+                android:background="@drawable/btn_circle_background"
+                android:backgroundTint="#3A1A1A"
+                android:padding="10dp" />
+            <TextView
+                android:id="@+id/btnRecordLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Enreg."
+                android:textColor="#B0BEC5"
+                android:textSize="9sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 5. SCREEN OVERLAY (Proximité) -->
+    <View
+        android:id="@+id/screenOverlay"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="#000000"
+        android:alpha="0"
+        android:elevation="20dp"
+        android:clickable="false"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="#1E1E1E">
+
+    <!-- Elevation chart -->
+    <com.bpi.cairn.ui.theme.ElevationChartView
+        android:id="@+id/elevationChart"
+        android:layout_width="match_parent"
+        android:layout_height="200dp"
+        android:background="#121212"/>
+
+    <!-- Stats row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="12dp"
+        android:gravity="center">
+
+        <TextView
+            android:id="@+id/tvDistance"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:gravity="center"
+            android:text="Distance : –"/>
+
+        <TextView
+            android:id="@+id/tvGain"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:textColor="#4CAF50"
+            android:textSize="13sp"
+            android:gravity="center"
+            android:text="D+ : –"/>
+
+        <TextView
+            android:id="@+id/tvLoss"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:textColor="#FF5252"
+            android:textSize="13sp"
+            android:gravity="center"
+            android:text="D- : –"/>
+
+        <TextView
+            android:id="@+id/tvEleRange"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:textColor="#BBBBBB"
+            android:textSize="13sp"
+            android:gravity="center"
+            android:text="Alt. : –"/>
+
+    </LinearLayout>
+
+</LinearLayout>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Pour les fichiers enregistrés dans /data/user/0/com.bpi.cairn/files/traces -->
+    <files-path
+        name="my_traces"
+        path="traces/" />
+
+    <!-- Pour les fichiers importés ou temporaires en cache -->
+    <cache-path
+        name="cached_traces"
+        path="." />
+
+    <!-- Sécurité supplémentaire pour l'osmdroid cache -->
+    <files-path
+        name="osmdroid"
+        path="osmdroid/" />
+</paths>
