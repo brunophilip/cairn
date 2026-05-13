@@ -12,10 +12,18 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import com.bpi.cairn.gpx.GpxTrack
 import com.bpi.cairn.gpx.TrackPoint
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.osmdroid.config.Configuration
+import org.osmdroid.events.MapListener
+import org.osmdroid.events.ScrollEvent
+import org.osmdroid.events.ZoomEvent
+import org.osmdroid.tileprovider.cachemanager.CacheManager
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
@@ -53,15 +61,30 @@ class MapFragment : Fragment() {
     private var isFollowing = false
     private var shouldLockCamera = false // Est mis à true pendant l'enregistrement
 
+    private var totalDistance = 0f
+    private var lastLocationForDistance: Location? = null
+
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
-        Configuration.getInstance().load(
+        // 1. Récupérer l'instance de configuration
+        val conf = Configuration.getInstance()
+
+        // 2. Charger les préférences existantes
+        conf.load(
             requireContext(),
             requireContext().getSharedPreferences("osmdroid", Context.MODE_PRIVATE)
         )
-        Configuration.getInstance().userAgentValue = "com.bpi.cairn"
 
+        // 3. Appliquer vos réglages sur l'objet 'conf'
+        conf.userAgentValue = "com.bpi.cairn"
+
+        // Note : cacheMapTileCount est un Short, pas un Long
+        conf.cacheMapTileCount = 500.toShort()
+
+        // Augmenter le cache sur le disque (1 Go)
+        conf.tileFileSystemCacheMaxBytes = 1000L * 1024 * 1024
         mapView = MapView(requireContext()).apply {
             setTileSource(TileSourceFactory.OpenTopo)
             setMultiTouchControls(true)
@@ -69,11 +92,78 @@ class MapFragment : Fragment() {
             controller.setCenter(GeoPoint(46.603354, 1.888334))
         }
 
+        mapView.addMapListener(object : MapListener {
+            override fun onScroll(event: ScrollEvent?): Boolean {
+                // Dès qu'on déplace la carte, on demande à l'activité de repasser en Auto
+                (activity as? MainActivity)?.forceAutoBrightness()
+                return false
+            }
+
+            override fun onZoom(event: ZoomEvent?): Boolean {
+                // Dès qu'on zoome, on demande à l'activité de repasser en Auto
+                (activity as? MainActivity)?.forceAutoBrightness()
+                return false
+            }
+        })
+
         setupLocationOverlay()
         setupCompassOverlay()
         setupRecordingPolyline()
 
         return mapView
+    }
+
+    private fun downloadTrackCache(track: GpxTrack) {
+        val cacheManager = CacheManager(mapView)
+
+        val points = track.points.map { pt ->
+            GeoPoint(pt.lat.toDouble(), pt.lon.toDouble())
+        }
+
+        val minZoom = 14
+        val maxZoom = 16
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                cacheManager.downloadAreaAsync(
+                    requireContext(),
+                    ArrayList(points),
+                    minZoom,
+                    maxZoom,
+                    object : CacheManager.CacheManagerCallback {
+
+                        // ✅ Nouvelle méthode requise par votre version d'osmdroid
+                        override fun setPossibleTilesInArea(total: Int) {
+                            // On peut logger le nombre total de tuiles à traiter
+                            android.util.Log.d("Cairn", "Nombre total de tuiles à analyser : $total")
+                        }
+
+                        override fun downloadStarted() {
+                            activity?.runOnUiThread {
+                                android.widget.Toast.makeText(requireContext(), "Début de la mise en cache...", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+
+                        override fun onTaskComplete() {
+                            activity?.runOnUiThread {
+                                // Confirmation visuelle pour l'utilisateur
+                                android.widget.Toast.makeText(requireContext(), "Carte mise en cache (Z14-16)", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+
+                        override fun onTaskFailed(errors: Int) {
+                            android.util.Log.e("Cairn", "Échec du cache : $errors erreurs")
+                        }
+
+                        override fun updateProgress(progress: Int, currentZoomLevel: Int, zoomMin: Int, zoomMax: Int) {
+                            // Progression du téléchargement
+                        }
+                    }
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     // ─── LOGIQUE DE CAMÉRA (CENTRALISÉE) ────────────────────────────────────
@@ -109,6 +199,11 @@ class MapFragment : Fragment() {
         lastLocation?.let {
             mapView.controller.animateTo(GeoPoint(it.latitude, it.longitude))
         }
+    }
+
+    fun resetStats() {
+        totalDistance = 0f
+        lastLocationForDistance = null
     }
 
     // ─── ENREGISTREMENT ──────────────────────────────────────────────────────
@@ -200,7 +295,12 @@ class MapFragment : Fragment() {
                 activity?.runOnUiThread {
                     if (isFirstFix) {
                         mapView.controller.setZoom(16.0)
-                        mapView.controller.setCenter(GeoPoint(location.latitude, location.longitude))
+                        mapView.controller.setCenter(
+                            GeoPoint(
+                                location.latitude,
+                                location.longitude
+                            )
+                        )
                         isFirstFix = false
                     }
 
@@ -208,7 +308,20 @@ class MapFragment : Fragment() {
 
                     // 🎯 RÈGLE DE CAMÉRA : Suivi OU Enregistrement
                     if (isFollowing || shouldLockCamera) {
+                        // 1. On déplace la carte
                         updateMapPosition(location)
+
+                        // 2. Calcul de la distance (on cumule les mètres)
+                        lastLocationForDistance?.let {
+                            totalDistance += it.distanceTo(location)
+                        }
+                        lastLocationForDistance = location
+
+                        // 3. Calcul de la vitesse (m/s -> km/h)
+                        val speedKmH = location.speed * 3.6f
+
+                        // 4. Mise à jour de l'interface sur MainActivity
+                        (activity as? MainActivity)?.updateStatsUI(speedKmH, totalDistance / 1000f)
                     }
                 }
             }
@@ -317,6 +430,22 @@ class MapFragment : Fragment() {
         return (Math.toDegrees(atan2(y, x)) + 360) % 360
     }
 
+    private fun createStartIcon(): android.graphics.drawable.Drawable {
+        val size = 40
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#2E7D32") // Vert forêt
+            style = Paint.Style.FILL
+        }
+        // Dessine un cercle blanc avec un contour vert
+        canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint)
+        paint.color = Color.WHITE
+        canvas.drawCircle(size / 2f, size / 2f, size / 3f, paint)
+
+        return android.graphics.drawable.BitmapDrawable(resources, bmp)
+    }
+
     fun setTrack(track: GpxTrack) {
         currentTrack = track
         trackProgress = 0
@@ -326,12 +455,26 @@ class MapFragment : Fragment() {
         directionArrows.forEach { mapView.overlays.remove(it) }
         directionArrows.clear()
 
+        if (track.points.isEmpty()) return
         val points = track.points.map { GeoPoint(it.lat, it.lon) }
+
+        // 2. AJOUT DU MARQUEUR DE DÉPART 🏁
+        val startPoint = points.first()
+        val startMarker = Marker(mapView).apply {
+            position = startPoint
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            title = "Départ : ${track.name}"
+            // Utilisation d'une icône standard d'Android ou personnalisée
+            icon = createStartIcon()
+            // Optionnel : teinter le marqueur en vert pour le départ
+            icon?.setTint(Color.parseColor("#2E7D32"))
+        }
+        mapView.overlays.add(startMarker)
 
         // 2. Création de la ligne "Restante" (Rouge/Orange)
         remainingPolyline = Polyline(mapView).apply {
             outlinePaint.color = Color.RED
-            outlinePaint.strokeWidth = 8f
+            outlinePaint.strokeWidth = 10f
             outlinePaint.strokeCap = Paint.Cap.ROUND
             setPoints(points)
             infoWindow = null
@@ -339,8 +482,8 @@ class MapFragment : Fragment() {
 
         // 3. Création de la ligne "Parcourue" (Verte)
         completedPolyline = Polyline(mapView).apply {
-            outlinePaint.color = Color.GREEN
-            outlinePaint.strokeWidth = 8f
+            outlinePaint.color = Color.parseColor("#0000FF")
+            outlinePaint.strokeWidth = 10f
             outlinePaint.strokeCap = Paint.Cap.ROUND
             setPoints(emptyList())
             infoWindow = null
@@ -368,6 +511,8 @@ class MapFragment : Fragment() {
         }
 
         mapView.invalidate() // Rafraîchissement final
+
+        downloadTrackCache(track)
     }
 
     fun postOnMap(action: () -> Unit) {
@@ -377,20 +522,37 @@ class MapFragment : Fragment() {
     }
 
     private fun createUserArrowBitmap(): Bitmap {
-        val size = 64
+        val size = 100 // Augmenté de 64 à 100 pour une flèche plus grande
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#1565C0") }
+
+        // Couleur Mauve (Purple 600)
+        val mauveColor = Color.parseColor("#8E24AA")
+
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = mauveColor
+        }
+
         val path = Path().apply {
-            moveTo(size / 2f, 4f)
-            lineTo(size - 6f, size - 4f)
-            lineTo(size / 2f, size - 16f)
-            lineTo(6f, size - 4f)
+            // Dessin d'une flèche plus imposante
+            moveTo(size / 2f, 5f)               // Pointe
+            lineTo(size.toFloat() - 5f, size.toFloat() - 5f) // Bas droite
+            lineTo(size / 2f, size.toFloat() - 25f)          // Creux arrière
+            lineTo(5f, size.toFloat() - 5f)     // Bas gauche
             close()
         }
+
+        // Dessin du corps de la flèche
         canvas.drawPath(path, paint)
-        paint.apply { color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 3f }
+
+        // Ajout d'un contour blanc épais pour qu'elle ressorte sur la carte
+        paint.apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = 6f
+        }
         canvas.drawPath(path, paint)
+
         return bmp
     }
 

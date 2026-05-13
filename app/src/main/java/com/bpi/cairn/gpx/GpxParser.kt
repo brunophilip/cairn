@@ -117,6 +117,71 @@ object GpxParser {
             return GpxTrack(trackName, points)
         }
     }
+
+    // Dans GpxParser.kt, à l'intérieur de l'object GpxParser
+    fun parse(xmlContent: String): GpxTrack {
+        val factory = XmlPullParserFactory.newInstance().apply { isNamespaceAware = true }
+        val parser  = factory.newPullParser()
+
+        // On utilise un StringReader au lieu d'un FileInputStream
+        parser.setInput(java.io.StringReader(xmlContent))
+
+        var trackName = "Nouvelle trace"
+        val points    = mutableListOf<TrackPoint>()
+
+        var currentLat = 0.0
+        var currentLon = 0.0
+        var currentEle = 0.0
+        var currentTime: String? = null
+        var insidePoint = false
+        var insideEle   = false
+        var insideTime  = false
+        var insideName  = false
+
+        var eventType = parser.eventType
+        while (eventType != XmlPullParser.END_DOCUMENT) {
+            when (eventType) {
+                XmlPullParser.START_TAG -> {
+                    when (parser.name) {
+                        "name" -> if (!insidePoint) insideName = true
+
+                        "trkpt", "rtept" -> {
+                            insidePoint = true
+                            currentLat  = parser.getAttributeValue(null, "lat")?.toDoubleOrNull() ?: 0.0
+                            currentLon  = parser.getAttributeValue(null, "lon")?.toDoubleOrNull() ?: 0.0
+                            currentEle  = 0.0
+                            currentTime = null
+                        }
+
+                        "ele"  -> if (insidePoint) insideEle  = true
+                        "time" -> if (insidePoint) insideTime = true
+                    }
+                }
+
+                XmlPullParser.TEXT -> {
+                    when {
+                        insideName -> trackName = parser.text.trim()
+                        insideEle  -> currentEle  = parser.text.trim().toDoubleOrNull() ?: 0.0
+                        insideTime -> currentTime = parser.text.trim()
+                    }
+                }
+
+                XmlPullParser.END_TAG -> {
+                    when (parser.name) {
+                        "name"                -> insideName = false
+                        "ele"                 -> insideEle  = false
+                        "time"                -> insideTime = false
+                        "trkpt", "rtept" -> {
+                            points.add(TrackPoint(currentLat, currentLon, currentEle, currentTime))
+                            insidePoint = false
+                        }
+                    }
+                }
+            }
+            eventType = parser.next()
+        }
+        return GpxTrack(trackName, points)
+    }
 }
 
 // ─── Haversine distance ───────────────────────────────────────────────────────

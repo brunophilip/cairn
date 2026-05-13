@@ -104,7 +104,47 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- 4. BARRE DU BAS (Menu principal) -->
+    <!-- 4. STATISTIQUES (Vitesse et Distance - Bas Gauche sur Carte) -->
+    <LinearLayout
+        android:id="@+id/statsOverlay"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="0dp"
+        android:background="@android:color/transparent"
+        android:layout_marginBottom="15dp"
+        android:layout_marginStart="15dp"
+        app:layout_constraintBottom_toTopOf="@+id/bottomBar"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <TextView
+            android:id="@+id/txtSpeed"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0.0 km/h"
+            android:textColor="#008000"
+            android:textSize="32sp"
+            android:textStyle="bold"
+            android:shadowColor="#CC000000"
+            android:shadowDx="2"
+            android:shadowDy="2"
+            android:shadowRadius="3" />
+
+        <TextView
+            android:id="@+id/txtDistance"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0.00 km"
+            android:textColor="#008000"
+            android:textSize="32sp"
+            android:textStyle="bold"
+            android:shadowColor="#CC000000"
+            android:shadowDx="2"
+            android:shadowDy="2"
+            android:shadowRadius="3" />
+    </LinearLayout>
+
+    <!-- 5. BARRE DU BAS (Menu principal) -->
     <LinearLayout
         android:id="@+id/bottomBar"
         android:layout_width="0dp"
@@ -214,7 +254,7 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- 5. SCREEN OVERLAY (Proximité) -->
+    <!-- 6. SCREEN OVERLAY (Proximité) -->
     <View
         android:id="@+id/screenOverlay"
         android:layout_width="0dp"

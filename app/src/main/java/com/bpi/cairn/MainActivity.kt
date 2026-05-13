@@ -51,12 +51,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var isFollowing = false
 
     private lateinit var mapFragment: MapFragment
+    private val gpxParser = GpxParser
     private var currentTrack: GpxTrack? = null
 
     // Capteur de proximité
     private lateinit var sensorManager: SensorManager
     private var proximitySensor: Sensor? = null
     private var isScreenOff = false
+    private var isDimmed = false
 
     // ─── GPX file picker ──────────────────────────────────────────────────────
     private val gpxPickerLauncher = registerForActivityResult(
@@ -112,9 +114,55 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         unregisterReceiver(locationReceiver)
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent) // Important pour que handleIntent récupère les nouvelles données
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_VIEW) {
+            val uri = intent.data ?: return
+
+            // On lance cela dans une coroutine car la lecture de fichier peut être lente
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    contentResolver.openInputStream(uri)?.use { inputStream ->
+                        val gpxString = inputStream.bufferedReader().use { it.readText() }
+                        val track = gpxParser.parse(gpxString)
+
+                        withContext(Dispatchers.Main) {
+                            if (track != null && ::mapFragment.isInitialized) {
+                                // 1. Affichage immédiat
+                                mapFragment.setTrack(track)
+                                currentTrack = track
+                                btnElevation.alpha = 1f
+
+                                // 2. Sauvegarde dans le dossier "traces" pour le retrouver plus tard
+                                saveTrackToInternalList(track, gpxString)
+
+                                Toast.makeText(this@MainActivity, "Importation réussie : ${track.name}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Erreur lors de l'ouverture : ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val lp = window.attributes
+        lp.screenBrightness = -1.0f
+        window.attributes = lp
+        isDimmed = false
+
         setContentView(R.layout.activity_main)
 
         // Adapter le padding au bas selon la barre de navigation du système
@@ -164,6 +212,21 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         setupButtons()
         setupProximitySensor()
         checkPermissions()
+
+        handleIntent(intent)
+    }
+
+    private fun saveTrackToInternalList(track: GpxTrack, gpxContent: String) {
+        try {
+            // On nettoie le nom pour le système de fichier
+            val fileName = "${track.name.replace(" ", "_")}_${System.currentTimeMillis()}.gpx"
+            val destFile = File(getWorkingDir(), fileName)
+
+            // On écrit le texte XML dans le dossier "traces"
+            destFile.writeText(gpxContent)
+        } catch (e: Exception) {
+            android.util.Log.e("Cairn", "Erreur sauvegarde interne : ${e.message}")
+        }
     }
 
     // ─── Capteur de proximité ─────────────────────────────────────────────────
@@ -188,6 +251,43 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
+    private fun toggleBrightness() {
+        val lp = window.attributes
+        if (isDimmed) {
+            // ✅ Retour au mode ADAPTATIF (réglage système)
+            lp.screenBrightness = -1.0f
+            isDimmed = false
+            Toast.makeText(this, "Luminosité : Auto", Toast.LENGTH_SHORT).show()
+        } else {
+            // ✅ Passage au mode ÉCO (sombre)
+            lp.screenBrightness = 0.2f
+            isDimmed = true
+            Toast.makeText(this, "Luminosité : Éco", Toast.LENGTH_SHORT).show()
+        }
+        window.attributes = lp
+    }
+
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent?): Boolean {
+        // ✅ CONDITION DE SÉCURITÉ : Si le téléphone est dans la poche (isScreenOff), on ignore l'appui
+        if (isScreenOff) return super.dispatchTouchEvent(ev)
+
+        if (ev?.action == android.view.MotionEvent.ACTION_DOWN) {
+            val marginSide = (70 * resources.displayMetrics.density).toInt()
+            val marginTop = (100 * resources.displayMetrics.density).toInt()
+            val bottomBar = findViewById<View>(R.id.bottomBar)
+
+            val isInCentralZone = ev.x > marginSide &&
+                    ev.x < (resources.displayMetrics.widthPixels - marginSide) &&
+                    ev.y > marginTop &&
+                    ev.y < bottomBar.top
+
+            if (isInCentralZone) {
+                toggleBrightness()
+            }
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
     private fun screenOff() {
         isScreenOff = true
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -207,6 +307,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     // ─── Lifecycle du capteur ─────────────────────────────────────────────────
     override fun onResume() {
         super.onResume()
+
+        isDimmed = false
+        val lp = window.attributes
+        lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_FULL
+        window.attributes = lp
+
         proximitySensor?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
         }
@@ -214,7 +320,18 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     override fun onPause() {
         super.onPause()
+
         sensorManager.unregisterListener(this)
+    }
+
+    fun updateStatsUI(speed: Float, distanceKm: Float) {
+        runOnUiThread { // ✅ Ajoute ceci pour éviter le crash
+            val txtSpeed = findViewById<TextView>(R.id.txtSpeed)
+            val txtDistance = findViewById<TextView>(R.id.txtDistance)
+
+            txtSpeed?.text = String.format("%.1f km/h", speed)
+            txtDistance?.text = String.format("%.2f km", distanceKm)
+        }
     }
 
     // ─── Map ──────────────────────────────────────────────────────────────────
@@ -250,6 +367,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             isFollowing = !isFollowing
             btnFollowIcon.setImageResource(if (isFollowing) R.drawable.ic_btn_stop else R.drawable.ic_btn_play)
 
+            if (isFollowing) {
+                mapFragment.resetStats()
+                updateStatsUI(0f, 0f) // On force l'affichage à 0 immédiatement
+            }
+
             // On informe le fragment du changement d'état du bouton suivi
             mapFragment.updateCameraMode(isFollowing, isRecording)
         }
@@ -262,6 +384,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             mapFragment.updateCameraMode(isFollowing, isRecording)
 
             if (isRecording) {
+                mapFragment.resetStats()
+                updateStatsUI(0f, 0f)
+
                 recordedPoints.clear()
                 btnRecordIcon.setImageResource(R.drawable.ic_btn_stop)
                 btnRecordLabel.text = "Stop"
@@ -300,6 +425,19 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     }
                     .show()
             }
+        }
+    }
+
+    fun forceAutoBrightness() {
+        if (isDimmed) {
+            val lp = window.attributes
+            lp.screenBrightness = -1.0f // Repasse en Auto
+            window.attributes = lp
+
+            isDimmed = false // ✅ TRÈS IMPORTANT : on remet l'état à "Auto"
+
+            // Optionnel : Afficher un Toast pour confirmer le changement automatique
+            Toast.makeText(this, "Luminosité : Auto (Zoom/Mouvement)", Toast.LENGTH_SHORT).show()
         }
     }
 
