@@ -60,6 +60,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var isScreenOff = false
     private var isDimmed = false
 
+    private lateinit var txtSpeed: TextView
+    private lateinit var txtDistance: TextView
+
+    private var isUserTouchingScreen = false
+
+    companion object {
+        const val BRIGHTNESS_ECO = 0.2f
+    }
+
     // ─── GPX file picker ──────────────────────────────────────────────────────
     private val gpxPickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -193,6 +202,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 .show()
         }
 
+        txtSpeed = findViewById(R.id.txtSpeed)
+        txtDistance = findViewById(R.id.txtDistance)
+
         // Garder l'écran allumé pendant la navigation
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
@@ -214,16 +226,28 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         checkPermissions()
 
         handleIntent(intent)
+
+        screenOn()
     }
 
     private fun saveTrackToInternalList(track: GpxTrack, gpxContent: String) {
         try {
-            // On nettoie le nom pour le système de fichier
-            val fileName = "${track.name.replace(" ", "_")}_${System.currentTimeMillis()}.gpx"
-            val destFile = File(getWorkingDir(), fileName)
+            // 1. On nettoie le nom (remplace les espaces et caractères problématiques)
+            val cleanName = track.name.replace(" ", "_").replace("/", "-")
+            var fileName = "$cleanName.gpx"
+            var destFile = File(getWorkingDir(), fileName)
 
-            // On écrit le texte XML dans le dossier "traces"
+            // 2. Sécurité : si le fichier existe déjà, on ajoute juste _1, _2, etc.
+            var counter = 1
+            while (destFile.exists()) {
+                fileName = "${cleanName}_$counter.gpx"
+                destFile = File(getWorkingDir(), fileName)
+                counter++
+            }
+
+            // 3. On écrit le fichier
             destFile.writeText(gpxContent)
+
         } catch (e: Exception) {
             android.util.Log.e("Cairn", "Erreur sauvegarde interne : ${e.message}")
         }
@@ -241,8 +265,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     override fun onSensorChanged(event: SensorEvent) {
         if (event.sensor.type != Sensor.TYPE_PROXIMITY) return
         val distance = event.values[0]
-        val maxRange = proximitySensor?.maximumRange ?: 5f
-        if (distance < maxRange) {
+
+        // ✅ CORRECTION : Ne s'active que si l'objet est collé à l'écran (< 3 cm)
+        // Ignore les valeurs fantaisistes du "maxRange" du téléphone
+        val isNear = distance < 3f
+
+        if (isNear) {
             if (!isScreenOff) screenOff()
         } else {
             if (isScreenOff) screenOn()
@@ -254,43 +282,67 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun toggleBrightness() {
         val lp = window.attributes
         if (isDimmed) {
-            // ✅ Retour au mode ADAPTATIF (réglage système)
-            lp.screenBrightness = -1.0f
+            lp.screenBrightness = -1f  // ← restitue le réglage système
             isDimmed = false
-            Toast.makeText(this, "Luminosité : Auto", Toast.LENGTH_SHORT).show()
         } else {
-            // ✅ Passage au mode ÉCO (sombre)
-            lp.screenBrightness = 0.2f
+            lp.screenBrightness = BRIGHTNESS_ECO
             isDimmed = true
-            Toast.makeText(this, "Luminosité : Éco", Toast.LENGTH_SHORT).show()
         }
         window.attributes = lp
     }
 
+    private var touchStartTime: Long = 0
+    private var isMultiTouch = false
+
     override fun dispatchTouchEvent(ev: android.view.MotionEvent?): Boolean {
-        // ✅ CONDITION DE SÉCURITÉ : Si le téléphone est dans la poche (isScreenOff), on ignore l'appui
-        if (isScreenOff) return super.dispatchTouchEvent(ev)
+        try {
+            if (isScreenOff) return super.dispatchTouchEvent(ev)
 
-        if (ev?.action == android.view.MotionEvent.ACTION_DOWN) {
-            val marginSide = (70 * resources.displayMetrics.density).toInt()
-            val marginTop = (100 * resources.displayMetrics.density).toInt()
-            val bottomBar = findViewById<View>(R.id.bottomBar)
+            when (ev?.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    isUserTouchingScreen = true // ✅ Le doigt est posé
+                    touchStartTime = System.currentTimeMillis()
+                    isMultiTouch = false
+                }
+                android.view.MotionEvent.ACTION_POINTER_DOWN -> {
+                    isUserTouchingScreen = true // ✅ Plusieurs doigts posés
+                    isMultiTouch = true
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    isUserTouchingScreen = false // ✅ Le doigt est relâché
 
-            val isInCentralZone = ev.x > marginSide &&
-                    ev.x < (resources.displayMetrics.widthPixels - marginSide) &&
-                    ev.y > marginTop &&
-                    ev.y < bottomBar.top
+                    val touchDuration = System.currentTimeMillis() - touchStartTime
 
-            if (isInCentralZone) {
-                toggleBrightness()
+                    if (!isMultiTouch && touchDuration < 250) {
+                        val marginSide = (70 * resources.displayMetrics.density).toInt()
+                        val marginTop = (100 * resources.displayMetrics.density).toInt()
+                        val bottomBar = findViewById<View>(R.id.bottomBar)
+                        val bottomLimit = bottomBar?.top ?: resources.displayMetrics.heightPixels
+
+                        val isInCentralZone = ev.x > marginSide &&
+                                ev.x < (resources.displayMetrics.widthPixels - marginSide) &&
+                                ev.y > marginTop &&
+                                ev.y < bottomLimit
+
+                        if (isInCentralZone) {
+                            toggleBrightness()
+                        }
+                    }
+                }
             }
+            return super.dispatchTouchEvent(ev)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return true
         }
-        return super.dispatchTouchEvent(ev)
     }
 
     private fun screenOff() {
         isScreenOff = true
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        // ✅ On réaffiche la vue noire
+        screenOverlay.visibility = View.VISIBLE
         screenOverlay.alpha = 1f
         screenOverlay.isClickable = true
         screenOverlay.setOnClickListener { screenOn() }
@@ -299,18 +351,21 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun screenOn() {
         isScreenOff = false
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        screenOverlay.alpha = 0f
+
+        // ✅ LA CLÉ EST ICI : GONE fait disparaître totalement la vue, elle ne peut plus rien bloquer
+        screenOverlay.visibility = View.GONE
         screenOverlay.isClickable = false
         screenOverlay.setOnClickListener(null)
     }
 
-    // ─── Lifecycle du capteur ─────────────────────────────────────────────────
     override fun onResume() {
         super.onResume()
 
+        screenOn() // ✅ Force le déblocage de l'overlay
+
         isDimmed = false
         val lp = window.attributes
-        lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_FULL
+        lp.screenBrightness = -1f
         window.attributes = lp
 
         proximitySensor?.let {
@@ -325,12 +380,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     fun updateStatsUI(speed: Float, distanceKm: Float) {
-        runOnUiThread { // ✅ Ajoute ceci pour éviter le crash
-            val txtSpeed = findViewById<TextView>(R.id.txtSpeed)
-            val txtDistance = findViewById<TextView>(R.id.txtDistance)
-
-            txtSpeed?.text = String.format("%.1f km/h", speed)
-            txtDistance?.text = String.format("%.2f km", distanceKm)
+        runOnUiThread {
+            // L'affichage sera plus propre avec Locale.FRANCE pour avoir une virgule
+            txtSpeed.text = String.format(java.util.Locale.FRANCE, "%.1f km/h", speed)
+            txtDistance.text = String.format(java.util.Locale.FRANCE, "%.2f km", distanceKm)
         }
     }
 
@@ -429,15 +482,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     fun forceAutoBrightness() {
-        if (isDimmed) {
+        // ✅ LA SÉCURITÉ : On ne réveille l'écran que si c'est VOTRE doigt qui bouge la carte
+        if (isDimmed && isUserTouchingScreen) {
             val lp = window.attributes
-            lp.screenBrightness = -1.0f // Repasse en Auto
+            lp.screenBrightness = -1f
             window.attributes = lp
-
-            isDimmed = false // ✅ TRÈS IMPORTANT : on remet l'état à "Auto"
-
-            // Optionnel : Afficher un Toast pour confirmer le changement automatique
-            Toast.makeText(this, "Luminosité : Auto (Zoom/Mouvement)", Toast.LENGTH_SHORT).show()
+            isDimmed = false
         }
     }
 

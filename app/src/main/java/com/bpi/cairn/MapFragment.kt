@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -229,13 +230,11 @@ class MapFragment : Fragment() {
     private fun updateTrackProgress(location: Location) {
         val track = currentTrack ?: return
         val points = track.points
-
         val userGeo = GeoPoint(location.latitude, location.longitude)
+
         var closest = trackProgress
         var minDist = Double.MAX_VALUE
 
-        // On cherche le point de la trace le plus proche de la position GPS actuelle
-        // On commence la recherche à partir du dernier index connu (trackProgress)
         for (i in trackProgress until points.size) {
             val pt = GeoPoint(points[i].lat, points[i].lon)
             val dist = userGeo.distanceToAsDouble(pt)
@@ -243,41 +242,37 @@ class MapFragment : Fragment() {
                 minDist = dist
                 closest = i
             }
-            // Si on s'éloigne trop (plus de 500m), on arrête de chercher pour économiser le processeur
+            // Optimisation : arrêter la recherche si la distance augmente à nouveau (on s'éloigne du point le plus proche)
             if (dist > minDist + 500) break
         }
 
-        // Si on a avancé sur la trace
-        if (closest > trackProgress) {
+        // ✅ La condition de sécurité : moins de 100 mètres pour valider la progression
+        if (closest > trackProgress && minDist < 100) {
             trackProgress = closest
 
-            // On met à jour la ligne verte (partie terminée)
             val done = points.subList(0, trackProgress + 1).map { GeoPoint(it.lat, it.lon) }
             completedPolyline?.setPoints(done)
 
-            // On met à jour la ligne rouge (partie restante)
             val left = points.subList(trackProgress, points.size).map { GeoPoint(it.lat, it.lon) }
             remainingPolyline?.setPoints(left)
 
-            mapView.invalidate() // Rafraîchir l'affichage
+            mapView.invalidate()
         }
     }
+
     // ─── OVERLAYS & GPS ──────────────────────────────────────────────────────
 
     private fun setupLocationOverlay() {
         gpsProvider = GpsMyLocationProvider(requireContext()).apply {
-            locationUpdateMinDistance = 2.0f
+            locationUpdateMinDistance = 0.0f
             locationUpdateMinTime = 2000
         }
 
         locationOverlay = object : MyLocationNewOverlay(gpsProvider, mapView) {
             override fun onLocationChanged(location: Location?, source: IMyLocationProvider?) {
                 location ?: return
-
-                // Ignorer si trop imprécis
                 if (location.hasAccuracy() && location.accuracy > 25f) return
 
-                // Calcul du cap manuel si le GPS ne le fournit pas (vitesse lente)
                 if (!location.hasBearing() && lastLocation != null) {
                     if (lastLocation!!.distanceTo(location) > 1f) {
                         location.bearing = lastLocation!!.bearingTo(location)
@@ -289,38 +284,37 @@ class MapFragment : Fragment() {
                 super.onLocationChanged(location, source)
                 lastLocation = location
 
-                // Notifier MainActivity (via callback) pour le stockage GPX
                 recordingCallback?.invoke(location)
 
                 activity?.runOnUiThread {
                     if (isFirstFix) {
                         mapView.controller.setZoom(16.0)
-                        mapView.controller.setCenter(
-                            GeoPoint(
-                                location.latitude,
-                                location.longitude
-                            )
-                        )
+                        mapView.controller.setCenter(GeoPoint(location.latitude, location.longitude))
                         isFirstFix = false
                     }
 
                     updateTrackProgress(location)
 
-                    // 🎯 RÈGLE DE CAMÉRA : Suivi OU Enregistrement
                     if (isFollowing || shouldLockCamera) {
-                        // 1. On déplace la carte
                         updateMapPosition(location)
 
-                        // 2. Calcul de la distance (on cumule les mètres)
-                        lastLocationForDistance?.let {
-                            totalDistance += it.distanceTo(location)
+                        // ✅ 1. Calcul de la vitesse avec un seuil "anti-dérive"
+                        var speedKmH = location.speed * 3.6f
+
+                        // Si la vitesse est inférieure à 1.5 km/h, on force à 0
+                        if (speedKmH < 1.5f) {
+                            speedKmH = 0f
+                        }
+
+                        // ✅ 2. On n'ajoute la distance QUE si on est en mouvement
+                        if (speedKmH > 0f) {
+                            lastLocationForDistance?.let {
+                                totalDistance += it.distanceTo(location)
+                            }
                         }
                         lastLocationForDistance = location
 
-                        // 3. Calcul de la vitesse (m/s -> km/h)
-                        val speedKmH = location.speed * 3.6f
-
-                        // 4. Mise à jour de l'interface sur MainActivity
+                        // 3. Mise à jour de l'interface
                         (activity as? MainActivity)?.updateStatsUI(speedKmH, totalDistance / 1000f)
                     }
                 }
@@ -381,8 +375,16 @@ class MapFragment : Fragment() {
 
     // ─── DESSIN DES FLÈCHES DE DIRECTION ─────────────────────────────────────
     private fun addDirectionArrows(points: List<TrackPoint>) {
-        // On place une flèche environ tous les 20 points pour ne pas surcharger la carte
-        val step = maxOf(1, points.size / 20)
+        // 1. Nettoyer les flèches existantes pour éviter les fuites de mémoire
+        directionArrows.forEach { mapView.overlays.remove(it) }
+        directionArrows.clear()
+
+        if (points.size < 2) return
+
+        // 2. Limiter le nombre maximum de flèches à 30 pour la performance
+        val maxArrows = 30
+        val step = maxOf(1, points.size / maxArrows)
+
         for (i in step until points.size step step) {
             val from = points[i - 1]
             val to   = points[i]
@@ -480,7 +482,7 @@ class MapFragment : Fragment() {
             infoWindow = null
         }
 
-        // 3. Création de la ligne "Parcourue" (Verte)
+        // 3. Création de la ligne "Parcourue" (Bleue)
         completedPolyline = Polyline(mapView).apply {
             outlinePaint.color = Color.parseColor("#0000FF")
             outlinePaint.strokeWidth = 10f
