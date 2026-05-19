@@ -365,7 +365,7 @@ class MapFragment : Fragment() {
 
     private fun setupRecordingPolyline() {
         recordedTrackPolyline.outlinePaint.apply {
-            color = Color.RED
+            color = Color.parseColor("#0000FF")
             strokeWidth = 10f
             strokeCap = Paint.Cap.ROUND
             style = Paint.Style.STROKE
@@ -407,7 +407,7 @@ class MapFragment : Fragment() {
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.RED
+            color = Color.parseColor("#0000FF")
             alpha = 200
             style = Paint.Style.FILL
         }
@@ -473,18 +473,18 @@ class MapFragment : Fragment() {
         }
         mapView.overlays.add(startMarker)
 
-        // 2. Création de la ligne "Restante" (Rouge/Orange)
+        // 2. Création de la ligne "Restante" (Bleu)
         remainingPolyline = Polyline(mapView).apply {
-            outlinePaint.color = Color.RED
+            outlinePaint.color = Color.parseColor("#0000FF")
             outlinePaint.strokeWidth = 10f
             outlinePaint.strokeCap = Paint.Cap.ROUND
             setPoints(points)
             infoWindow = null
         }
 
-        // 3. Création de la ligne "Parcourue" (Bleue)
+        // 3. Création de la ligne "Parcourue" (Rouge)
         completedPolyline = Polyline(mapView).apply {
-            outlinePaint.color = Color.parseColor("#0000FF")
+            outlinePaint.color = Color.RED
             outlinePaint.strokeWidth = 10f
             outlinePaint.strokeCap = Paint.Cap.ROUND
             setPoints(emptyList())
