@@ -1,117 +1,88 @@
 package com.bpi.cairn
 
-import android.app.Activity
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
-import android.widget.*
+import android.widget.PopupMenu
+import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.bpi.cairn.gpx.GpxParser // Ajout de l'import pour votre parser
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class TrackListActivity : AppCompatActivity() {
 
-    private lateinit var listView: ListView
-    private lateinit var adapter: TrackFileAdapter
-    private var files = mutableListOf<File>()
+    private lateinit var adapter: TrackAdapter
+    private lateinit var txtEmpty: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(android.graphics.Color.BLACK)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.MATCH_PARENT
-            )
-        }
-
-        listView = ListView(this).apply {
-            divider = android.graphics.drawable.ColorDrawable(android.graphics.Color.DKGRAY)
-            dividerHeight = 1
-        }
-
-        layout.addView(listView)
-        setContentView(layout)
+        setContentView(R.layout.activity_track_list)
         title = "Mes Traces"
 
-        ViewCompat.setOnApplyWindowInsetsListener(layout) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(0, bars.top, 0, bars.bottom)
-            insets
-        }
+        val recyclerView = findViewById<RecyclerView>(R.id.recyclerView)
+        txtEmpty = findViewById<TextView>(R.id.txtEmpty)
 
-        refreshList()
-    }
-
-    private fun refreshList() {
         val dir = File(filesDir, "traces")
         if (!dir.exists()) dir.mkdirs()
 
-        files = (dir.listFiles { f -> f.extension.lowercase() == "gpx" }
+        val gpxFiles = dir.listFiles { _, name -> name.endsWith(".gpx") }
             ?.sortedByDescending { it.lastModified() }
-            ?.toMutableList() ?: mutableListOf())
+            ?: emptyList()
 
-        if (files.isEmpty()) {
-            Toast.makeText(this, "Aucune trace disponible", Toast.LENGTH_SHORT).show()
-            finish()
-        }
+        if (gpxFiles.isEmpty()) {
+            txtEmpty.visibility = View.VISIBLE
+            recyclerView.visibility = View.GONE
+        } else {
+            txtEmpty.visibility = View.GONE
+            recyclerView.layoutManager = LinearLayoutManager(this)
 
-        adapter = TrackFileAdapter(this, files)
-        listView.adapter = adapter
-    }
+            // On calcule la distance et l'altitude en tâche de fond (Dispatchers.IO)
+            lifecycleScope.launch(Dispatchers.IO) {
+                val trackSummaries = gpxFiles.map { file ->
+                    try {
+                        val track = GpxParser.parse(file)
+                        TrackSummary(
+                            file = file,
+                            distanceKm = track.totalDistanceMeters / 1000.0,
+                            elevationGain = track.elevationGain
+                        )
+                    } catch (e: Exception) {
+                        TrackSummary(file, 0.0, 0.0) // Si un fichier est corrompu
+                    }
+                }.toMutableList()
 
-    // --- ADAPTER PERSONNALISÉ POUR AJOUTER LES 3 POINTS ---
-    inner class TrackFileAdapter(context: Context, private val trackFiles: MutableList<File>) :
-        ArrayAdapter<File>(context, 0, trackFiles) {
-
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-            val file = getItem(position)!!
-
-            // Création de la ligne (Horizontale)
-            val row = convertView ?: LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(40, 50, 40, 50)
-                gravity = Gravity.CENTER_VERTICAL
-            }
-            val layout = row as LinearLayout
-            layout.removeAllViews()
-
-            // Texte du nom du fichier
-            val textView = TextView(context).apply {
-                text = file.nameWithoutExtension.replace("_", " ")
-                setTextColor(android.graphics.Color.WHITE)
-                textSize = 16f
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                setOnClickListener {
-                    val intent = Intent().apply { putExtra("selected_file", file.absolutePath) }
-                    setResult(Activity.RESULT_OK, intent)
-                    finish()
+                // Une fois le calcul terminé, on affiche la liste (Dispatchers.Main)
+                withContext(Dispatchers.Main) {
+                    adapter = TrackAdapter(
+                        tracks = trackSummaries,
+                        onTrackSelected = { selectedFile ->
+                            val resultIntent = Intent().apply {
+                                putExtra("selected_file", selectedFile.absolutePath)
+                            }
+                            setResult(RESULT_OK, resultIntent)
+                            finish()
+                        },
+                        onMenuClicked = { anchorView, file, position ->
+                            showOptions(anchorView, file, position)
+                        }
+                    )
+                    recyclerView.adapter = adapter
+                    recyclerView.visibility = View.VISIBLE
                 }
             }
-
-            // Bouton 3 points (Menu)
-            val menuButton = TextView(context).apply {
-                text = "⋮" // Caractère vertical ellipsis
-                setTextColor(android.graphics.Color.GRAY)
-                textSize = 24f
-                setPadding(30, 10, 30, 10)
-                setOnClickListener { showOptions(it, file, position) }
-            }
-
-            layout.addView(textView)
-            layout.addView(menuButton)
-
-            return layout
         }
     }
+
+    // --- VOS FONCTIONS DE MENU INCHANGÉES ---
 
     private fun showOptions(anchor: View, file: File, position: Int) {
         val popup = PopupMenu(this, anchor)
@@ -138,7 +109,7 @@ class TrackListActivity : AppCompatActivity() {
             }
             startActivity(Intent.createChooser(intent, "Partager la trace"))
         } catch (e: Exception) {
-            Toast.makeText(this, "Erreur d'export", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Erreur d'export : ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -148,9 +119,11 @@ class TrackListActivity : AppCompatActivity() {
             .setMessage("Voulez-vous supprimer définitivement cette trace ?")
             .setPositiveButton("Supprimer") { _, _ ->
                 if (file.delete()) {
-                    files.removeAt(position)
-                    adapter.notifyDataSetChanged()
-                    if (files.isEmpty()) finish()
+                    adapter.removeTrackAt(position)
+                    if (adapter.getFilesCount() == 0) {
+                        txtEmpty.visibility = View.VISIBLE
+                        findViewById<RecyclerView>(R.id.recyclerView).visibility = View.GONE
+                    }
                 }
             }
             .setNegativeButton("Annuler", null)

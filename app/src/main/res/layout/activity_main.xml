@@ -7,7 +7,6 @@
     android:layout_height="match_parent"
     android:background="#000000">
 
-    <!-- 1. Map container (Plein écran) -->
     <FrameLayout
         android:id="@+id/mapContainer"
         android:layout_width="0dp"
@@ -17,7 +16,6 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"/>
 
-    <!-- 2. BOUTON INFO (Haut Droite) -->
     <LinearLayout
         android:id="@+id/btnInfo"
         android:layout_width="wrap_content"
@@ -42,9 +40,24 @@
             android:gravity="center"
             android:background="@drawable/btn_circle_background"
             android:backgroundTint="#444444" />
-    </LinearLayout>
+    </LinearLayout> <TextView
+        android:id="@+id/txtLargeSpeed"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="0.0"
+        android:textColor="#001F3F" android:textSize="100sp" android:textStyle="bold"
+        android:shadowColor="#FFFFFF"
+        android:shadowDx="0"
+        android:shadowDy="0"
+        android:shadowRadius="25"
+        android:visibility="gone"
+        android:elevation="10dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintVertical_bias="0.3" />
 
-    <!-- 3. BLOC ACTIONS (Profil et Centrer - Bas Droite) -->
     <LinearLayout
         android:id="@+id/rightActionsContainer"
         android:layout_width="wrap_content"
@@ -56,7 +69,6 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintBottom_toTopOf="@+id/bottomBar">
 
-        <!-- Bouton Profil (Dénivelé) -->
         <LinearLayout
             android:id="@+id/btnElevation"
             android:layout_width="wrap_content"
@@ -80,7 +92,6 @@
                 android:textSize="9sp" />
         </LinearLayout>
 
-        <!-- Bouton Centrer -->
         <LinearLayout
             android:id="@+id/btnCenter"
             android:layout_width="wrap_content"
@@ -104,7 +115,6 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- 4. STATISTIQUES (Vitesse et Distance - Bas Gauche sur Carte) -->
     <LinearLayout
         android:id="@+id/statsOverlay"
         android:layout_width="wrap_content"
@@ -144,7 +154,6 @@
             android:shadowRadius="3" />
     </LinearLayout>
 
-    <!-- 5. BARRE DU BAS (Menu principal) -->
     <LinearLayout
         android:id="@+id/bottomBar"
         android:layout_width="0dp"
@@ -158,7 +167,6 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <!-- Importer -->
         <LinearLayout
             android:id="@+id/btnImportGpx"
             android:layout_width="0dp"
@@ -181,7 +189,6 @@
                 android:textSize="9sp" />
         </LinearLayout>
 
-        <!-- Trace -->
         <LinearLayout
             android:id="@+id/btnSelectTrace"
             android:layout_width="0dp"
@@ -204,7 +211,6 @@
                 android:textSize="9sp" />
         </LinearLayout>
 
-        <!-- Suivi -->
         <LinearLayout
             android:id="@+id/btnFollow"
             android:layout_width="0dp"
@@ -228,7 +234,6 @@
                 android:textSize="9sp" />
         </LinearLayout>
 
-        <!-- Enregistrer -->
         <LinearLayout
             android:id="@+id/btnRecord"
             android:layout_width="0dp"
@@ -254,7 +259,6 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- 6. SCREEN OVERLAY (Proximité) -->
     <View
         android:id="@+id/screenOverlay"
         android:layout_width="0dp"

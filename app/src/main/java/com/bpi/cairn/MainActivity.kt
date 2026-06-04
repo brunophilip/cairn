@@ -65,6 +65,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private var isUserTouchingScreen = false
 
+    private lateinit var txtLargeSpeed: TextView
+    private var isLargeSpeedVisible = false
+
     companion object {
         const val BRIGHTNESS_ECO = 0.2f
     }
@@ -133,6 +136,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (intent?.action == Intent.ACTION_VIEW) {
             val uri = intent.data ?: return
 
+            // ✅ On arrête les modes en cours avant de charger la nouvelle trace
+            forceStopFollowing()
+            forceStopRecording()
+
             // On lance cela dans une coroutine car la lecture de fichier peut être lente
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
@@ -188,13 +195,22 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
 
         findViewById<View>(R.id.btnInfo).setOnClickListener {
+            // 1. Récupération dynamique du numéro de version depuis la configuration
+            val versionName = try {
+                packageManager.getPackageInfo(packageName, 0).versionName
+            } catch (e: Exception) {
+                "Inconnue"
+            }
+
+            // 2. Affichage de la boîte de dialogue avec la version
             androidx.appcompat.app.AlertDialog.Builder(this)
                 .setTitle("À propos de Cairn")
-                .setMessage("Créateur : Bruno PHILIP\nApplication de suivi rando & VTT.\n\nContactez-moi pour toute suggestion !")
+                .setMessage("Créateur : Bruno PHILIP\nVersion : $versionName\n\nApplication de suivi rando & VTT.\n\nContactez-moi pour toute suggestion !")
                 .setPositiveButton("Envoyer un mail") { _, _ ->
                     val intent = Intent(Intent.ACTION_SENDTO).apply {
                         data = Uri.parse("mailto:brunophi@gmail.com")
-                        putExtra(Intent.EXTRA_SUBJECT, "Feedback Cairn App")
+                        // Optionnel : ajouter la version dans l'objet du mail
+                        putExtra(Intent.EXTRA_SUBJECT, "Feedback Cairn App (v$versionName)")
                     }
                     startActivity(intent)
                 }
@@ -204,6 +220,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         txtSpeed = findViewById(R.id.txtSpeed)
         txtDistance = findViewById(R.id.txtDistance)
+
+        txtLargeSpeed = findViewById(R.id.txtLargeSpeed)
 
         // Garder l'écran allumé pendant la navigation
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -300,20 +318,48 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
             when (ev?.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> {
-                    isUserTouchingScreen = true // ✅ Le doigt est posé
+                    isUserTouchingScreen = true
                     touchStartTime = System.currentTimeMillis()
                     isMultiTouch = false
                 }
                 android.view.MotionEvent.ACTION_POINTER_DOWN -> {
-                    isUserTouchingScreen = true // ✅ Plusieurs doigts posés
+                    isUserTouchingScreen = true
                     isMultiTouch = true
                 }
                 android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                    isUserTouchingScreen = false // ✅ Le doigt est relâché
+                    isUserTouchingScreen = false
 
                     val touchDuration = System.currentTimeMillis() - touchStartTime
 
                     if (!isMultiTouch && touchDuration < 250) {
+
+                        // ✅ 1. DÉTECTION DU CLIC SUR LA ZONE STATISTIQUES (Vitesse / Distance)
+                        val speedRect = android.graphics.Rect()
+                        txtSpeed.getGlobalVisibleRect(speedRect)
+                        val distRect = android.graphics.Rect()
+                        txtDistance.getGlobalVisibleRect(distRect)
+
+                        // On fusionne les deux rectangles pour créer la zone globale
+                        speedRect.union(distRect)
+                        // On agrandit la zone tactile pour que le clic soit facile (même en roulant)
+                        speedRect.inset(-50, -50)
+
+                        if (speedRect.contains(ev.x.toInt(), ev.y.toInt())) {
+                            // L'utilisateur a touché la zone en bas à gauche !
+                            if (isFollowing || isRecording) {
+                                isLargeSpeedVisible = !isLargeSpeedVisible
+                                txtLargeSpeed.visibility = if (isLargeSpeedVisible) View.VISIBLE else View.GONE
+
+                                if (isLargeSpeedVisible) {
+                                    txtLargeSpeed.text = txtSpeed.text.toString().replace(" km/h", "")
+                                }
+                            }
+                            // 🛑 TRES IMPORTANT : On s'arrête ici. Le clic est absorbé.
+                            // Cela empêche le code ci-dessous (la luminosité) de s'exécuter.
+                            return super.dispatchTouchEvent(ev)
+                        }
+
+                        // ✅ 2. GESTION DE LA LUMINOSITÉ (Uniquement si on n'a pas cliqué sur les stats)
                         val marginSide = (70 * resources.displayMetrics.density).toInt()
                         val marginTop = (100 * resources.displayMetrics.density).toInt()
                         val bottomBar = findViewById<View>(R.id.bottomBar)
@@ -381,9 +427,17 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     fun updateStatsUI(speed: Float, distanceKm: Float) {
         runOnUiThread {
-            // L'affichage sera plus propre avec Locale.FRANCE pour avoir une virgule
-            txtSpeed.text = String.format(java.util.Locale.FRANCE, "%.1f km/h", speed)
+            // On formate uniquement le chiffre
+            val speedValueStr = String.format(java.util.Locale.FRANCE, "%.1f", speed)
+
+            // Le petit texte garde l'unité
+            txtSpeed.text = "$speedValueStr km/h"
             txtDistance.text = String.format(java.util.Locale.FRANCE, "%.2f km", distanceKm)
+
+            // Le texte géant ne prend que le chiffre
+            if (isLargeSpeedVisible) {
+                txtLargeSpeed.text = speedValueStr
+            }
         }
     }
 
@@ -519,8 +573,75 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         return name
     }
 
+    // ─── ARRÊT AUTOMATIQUE DES MODES ─────────────────────────────────────────
+
+    private fun forceStopFollowing() {
+        if (isFollowing) {
+            isFollowing = false
+            btnFollowIcon.setImageResource(R.drawable.ic_btn_play)
+            if (::mapFragment.isInitialized) {
+                mapFragment.updateCameraMode(isFollowing, isRecording)
+            }
+        }
+
+        // ✅ Disparition de la vitesse géante si tout est arrêté
+        if (!isFollowing && !isRecording) {
+            isLargeSpeedVisible = false
+            txtLargeSpeed.visibility = View.GONE
+        }
+
+    }
+
+    private fun forceStopRecording() {
+        if (isRecording) {
+            isRecording = false
+            btnRecordIcon.setImageResource(R.drawable.ic_btn_record)
+            btnRecordLabel.text = "Enreg."
+
+            // Arrêt du service GPS
+            val intent = Intent(this, GpsService::class.java).apply {
+                action = GpsService.ACTION_STOP
+            }
+            startService(intent)
+
+            if (::mapFragment.isInitialized) {
+                mapFragment.stopRecording()
+                mapFragment.updateCameraMode(isFollowing, isRecording)
+            }
+
+            // Demander de sauvegarder la trace avant de passer à la nouvelle
+            val input = android.widget.EditText(this).apply {
+                hint = "Ma rando du dimanche"
+            }
+
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Enregistrer la trace en cours")
+                .setMessage("Une nouvelle trace a été chargée. Voulez-vous sauvegarder celle que vous étiez en train d'enregistrer ?")
+                .setView(input)
+                .setCancelable(false)
+                .setPositiveButton("Enregistrer") { _, _ ->
+                    val name = input.text.toString().ifBlank { "Trace_${System.currentTimeMillis()}" }
+                    saveRecordedTrack(name)
+                }
+                .setNegativeButton("Ignorer") { _, _ ->
+                    recordedPoints.clear()
+                }
+                .show()
+        }
+
+        // ✅ Disparition de la vitesse géante si tout est arrêté
+        if (!isFollowing && !isRecording) {
+            isLargeSpeedVisible = false
+            txtLargeSpeed.visibility = View.GONE
+        }
+    }
+
     // ─── Load track ───────────────────────────────────────────────────────────
     private fun loadTrack(file: File) {
+        // ✅ On arrête les modes en cours avant de charger la nouvelle trace
+        forceStopFollowing()
+        forceStopRecording()
+
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val track = GpxParser.parse(file)

@@ -9,10 +9,10 @@ android {
 
     defaultConfig {
         applicationId = "com.bpi.cairn"
-        minSdk = 29
+        minSdk = 24
         targetSdk = 35
-        versionCode = 27
-        versionName = "2.7"
+        versionCode = 29
+        versionName = "2.9"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
