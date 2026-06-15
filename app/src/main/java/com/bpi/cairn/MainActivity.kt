@@ -32,6 +32,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+@Suppress("DEPRECATION")
 class MainActivity : AppCompatActivity(), SensorEventListener {
 
     // Views
@@ -46,7 +47,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var btnRecordIcon: ImageView
     private lateinit var btnRecordLabel: TextView
     private var isRecording = false
-    private val recordedPoints = mutableListOf<android.location.Location>()
+    private val recordedPoints = mutableListOf<Location>()
 
     private var isFollowing = false
 
