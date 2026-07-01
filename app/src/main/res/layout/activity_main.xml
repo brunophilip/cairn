@@ -93,6 +93,28 @@
         </LinearLayout>
 
         <LinearLayout
+            android:id="@+id/btnLayers"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="6dp"
+            android:layout_marginBottom="8dp">
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@android:drawable/ic_menu_mapmode" android:background="@drawable/btn_circle_background"
+                android:backgroundTint="#1F3A2A" android:padding="10dp"
+                app:tint="#FFFFFF" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Carte"
+                android:textColor="#B0BEC5"
+                android:textSize="9sp" />
+        </LinearLayout>
+
+        <LinearLayout
             android:id="@+id/btnCenter"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

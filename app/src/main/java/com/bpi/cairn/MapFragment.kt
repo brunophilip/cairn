@@ -65,6 +65,9 @@ class MapFragment : Fragment() {
     private var totalDistance = 0f
     private var lastLocationForDistance: Location? = null
 
+    // Gestion du recentrage
+    var isAutoCenterActive = true
+    var onMapInteracted: (() -> Unit)? = null // Pour prévenir l'activité qu'on a touché la carte
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -95,14 +98,16 @@ class MapFragment : Fragment() {
 
         mapView.addMapListener(object : MapListener {
             override fun onScroll(event: ScrollEvent?): Boolean {
-                // Dès qu'on déplace la carte, on demande à l'activité de repasser en Auto
                 (activity as? MainActivity)?.forceAutoBrightness()
+                // ✅ On informe l'activité qu'un déplacement a eu lieu
+                (activity as? MainActivity)?.handleMapInteraction()
                 return false
             }
 
             override fun onZoom(event: ZoomEvent?): Boolean {
-                // Dès qu'on zoome, on demande à l'activité de repasser en Auto
                 (activity as? MainActivity)?.forceAutoBrightness()
+                // ✅ On informe l'activité qu'un zoom a eu lieu
+                (activity as? MainActivity)?.handleMapInteraction()
                 return false
             }
         })
@@ -183,6 +188,9 @@ class MapFragment : Fragment() {
     }
 
     private fun updateMapPosition(location: Location) {
+        // La ligne magique qui empêche le GPS de forcer le recentrage
+        if (!isAutoCenterActive) return
+
         val geoPoint = GeoPoint(location.latitude, location.longitude)
         val speed = location.speed
 
@@ -224,6 +232,11 @@ class MapFragment : Fragment() {
 
     fun stopRecording() {
         recordingCallback = null
+    }
+
+    fun clearRecordedTrack() {
+        recordedTrackPolyline.setPoints(emptyList())
+        mapView.invalidate()
     }
 
     // ─── MISE À JOUR DE LA PROGRESSION SUR LA TRACE ──────────────────────────
@@ -365,7 +378,7 @@ class MapFragment : Fragment() {
 
     private fun setupRecordingPolyline() {
         recordedTrackPolyline.outlinePaint.apply {
-            color = Color.parseColor("#0000FF")
+            color = Color.RED
             strokeWidth = 10f
             strokeCap = Paint.Cap.ROUND
             style = Paint.Style.STROKE
@@ -588,5 +601,15 @@ class MapFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         locationOverlay.disableMyLocation()
+    }
+
+    // ─── CHANGEMENT DU FOND DE CARTE ─────────────────────────────────────────
+    fun setMapStyle(styleName: String) {
+        when (styleName) {
+            "OpenTopo" -> mapView.setTileSource(TileSourceFactory.OpenTopo)
+            "OSM_Standard" -> mapView.setTileSource(TileSourceFactory.MAPNIK)
+        }
+        // Force la carte à se redessiner immédiatement avec les nouvelles tuiles
+        mapView.invalidate()
     }
 }
