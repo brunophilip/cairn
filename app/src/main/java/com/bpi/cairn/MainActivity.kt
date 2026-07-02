@@ -446,6 +446,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             }
             mapFragment.updateCameraMode(isFollowing, isRecording)
 
+            if (!isFollowing) {
+                stopBlinkingCenterButton()
+                if (::mapFragment.isInitialized) {
+                    mapFragment.isAutoCenterActive = true
+                }
+            }
+
             if (!isFollowing && !isRecording) {
                 isLargeSpeedVisible = false
                 txtLargeSpeed.visibility = View.GONE
@@ -463,8 +470,16 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 btnRecordIcon.setImageResource(R.drawable.ic_btn_stop)
                 btnRecordLabel.text = "Stop"
 
+                val intent = Intent(this, GpsService::class.java).apply {
+                    action = GpsService.ACTION_START // Vérifiez si votre constante s'appelle ACTION_START ou simplement "START"
+                }
+                startService(intent)
+
                 mapFragment.startRecording { location ->
                     recordedPoints.add(location)
+
+                    // 🔴 2. AJOUT DU POINT SUR LA CARTE EN TEMPS RÉEL
+                    mapFragment.addPointToRecordedTrack(location)
                 }
                 Toast.makeText(this, "Enregistrement démarré", Toast.LENGTH_SHORT).show()
             } else {
@@ -474,6 +489,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 val intent = Intent(this, GpsService::class.java).apply { action = GpsService.ACTION_STOP }
                 startService(intent)
                 mapFragment.stopRecording()
+
+                stopBlinkingCenterButton()
+                if (::mapFragment.isInitialized) {
+                    mapFragment.isAutoCenterActive = true
+                }
 
                 val input = android.widget.EditText(this).apply { hint = "Ma rando du dimanche" }
 
