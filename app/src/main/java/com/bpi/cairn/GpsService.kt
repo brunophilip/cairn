@@ -16,6 +16,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.*
 import com.google.android.gms.location.LocationRequest
+import android.content.pm.ServiceInfo
 
 class GpsService : Service() {
 
@@ -63,7 +64,18 @@ class GpsService : Service() {
 
     private fun startTracking() {
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification())
+        val notification = createNotification()
+
+        // ✅ LA SÉCURITÉ POUR ANDROID 10 à 14+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION // <-- Le paramètre vital !
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
 
         requestLocationUpdates()
     }

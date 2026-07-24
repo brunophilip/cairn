@@ -69,6 +69,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var txtLargeSpeed: TextView
     private var isLargeSpeedVisible = false
 
+    // Gestion du compte à rebours de 30 secondes pour le recentrage
+    private var autoCenterResetJob: kotlinx.coroutines.Job? = null
+
     companion object {
         const val BRIGHTNESS_ECO = 0.2f
     }
@@ -185,17 +188,58 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 "Inconnue"
             }
 
+            // 1. Rédaction du mode d'emploi (mis à jour avec Cartes IGN et icône Play)
+            val docContent = """
+                <b>🚵‍♂️ 1. Suivi & Navigation</b><br>
+                • <b>Trace :</b> Chargez un parcours GPX depuis votre appareil.<br>
+                • <b>Suivre (icône Play) :</b> Centre la caméra sur votre position et oriente la carte dans le sens de la marche.<br>
+                • <b>Exploration :</b> Touchez ou glissez la carte pour observer les environs. Le recentrage automatique se coupe et le bouton <i>Centrer</i> se met à clignoter.<br>
+                • <b>Retour auto :</b> Sans action de votre part, le recentrage automatique se réactive tout seul après 30 secondes d'inactivité !<br><br>
+                
+                <b>🔴 2. Enregistrement GPS</b><br>
+                • Appuyez sur <b>Enreg.</b> pour enregistrer votre trace en direct (dessinée en rouge sur l'écran).<br>
+                • <b>Mode Poche :</b> Grâce au service d'arrière-plan, l'enregistrement continue parfaitement sans coupure, même si vous éteignez l'écran ou glissez le téléphone dans votre poche.<br><br>
+                
+                <b>🗺️ 3. Fonds de carte IGN & Relief</b><br>
+                • Le bouton <b>Carte</b> (à droite) permet de basculer instantanément entre les Cartes IGN Topo (style SCAN 25), les photos Satellites IGN, OpenTopoMap (relief) et OSM Standard.<br>
+                • <b>Hors-ligne :</b> Les zones affichées à l'écran sont automatiquement mémorisées dans le cache pour rester accessibles sans réseau en pleine nature.<br><br>
+                
+                <b>⚡ 4. Ergonomie & Batterie</b><br>
+                • <b>Vitesse géante :</b> Appuyez sur le bloc vitesse/distance en bas à gauche pour faire apparaître (ou masquer) votre vitesse en grand format en haut de l'écran.<br>
+                • <b>Luminosité Éco :</b> Touchez la zone centrale de la carte pour basculer rapidement entre la luminosité normale et le mode économie d'énergie.<br>
+                • <b>Capteur de proximité :</b> L'écran se coupe automatiquement si le capteur supérieur est recouvert (téléphone retourné ou dans une poche).<br><br>
+                <small><i>Application conçue par Bruno PHILIP — v$versionName</i></small>
+            """.trimIndent()
+
+            // 2. Création d'un conteneur déroulant (ScrollView + TextView)
+            val textView = TextView(this).apply {
+                text = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                    android.text.Html.fromHtml(docContent, android.text.Html.FROM_HTML_MODE_LEGACY)
+                } else {
+                    @Suppress("DEPRECATION")
+                    android.text.Html.fromHtml(docContent)
+                }
+                setPadding(60, 40, 60, 20)
+                textSize = 14f
+                setTextColor(android.graphics.Color.parseColor("#E0E0E0")) // Texte clair
+            }
+
+            val scrollView = android.widget.ScrollView(this).apply {
+                addView(textView)
+            }
+
+            // 3. Affichage de la boîte de dialogue
             androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("À propos de Cairn")
-                .setMessage("Créateur : Bruno PHILIP\nVersion : $versionName\n\nApplication de suivi rando & VTT.\n\nContactez-moi pour toute suggestion !")
-                .setPositiveButton("Envoyer un mail") { _, _ ->
+                .setTitle("📖 Guide d'utilisation Cairn")
+                .setView(scrollView)
+                .setPositiveButton("Fermer", null)
+                .setNeutralButton("✉️ Contact / Suggestion") { _, _ ->
                     val intent = Intent(Intent.ACTION_SENDTO).apply {
                         data = Uri.parse("mailto:brunophi@gmail.com")
                         putExtra(Intent.EXTRA_SUBJECT, "Feedback Cairn App (v$versionName)")
                     }
                     startActivity(intent)
                 }
-                .setNegativeButton("Fermer", null)
                 .show()
         }
 
@@ -417,16 +461,31 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         val btnLayers = findViewById<LinearLayout>(R.id.btnLayers)
         btnLayers.setOnClickListener {
-            val mapStyles = arrayOf("OpenTopoMap (Idéal VTT & Relief)", "OpenStreetMap (Standard & Rues)")
+            // ✅ Les 4 options proposées à l'utilisateur, avec l'IGN en tête !
+            val mapStyles = arrayOf(
+                "Cartes IGN Topo (SCAN 25 classique)",
+                "IGN Photos Aériennes (Vue Satellite)",
+                "OpenTopoMap (Relief & Courbes de niveau)",
+                "OpenStreetMap (Standard & Rues)"
+            )
+
             androidx.appcompat.app.AlertDialog.Builder(this)
                 .setTitle("Choisir le fond de carte")
                 .setItems(mapStyles) { _, which ->
                     when (which) {
                         0 -> {
+                            mapFragment.setMapStyle("IGN_Cartes")
+                            Toast.makeText(this, "Cartes IGN Topo activées", Toast.LENGTH_SHORT).show()
+                        }
+                        1 -> {
+                            mapFragment.setMapStyle("IGN_Photo")
+                            Toast.makeText(this, "Fond IGN Satellite activé", Toast.LENGTH_SHORT).show()
+                        }
+                        2 -> {
                             mapFragment.setMapStyle("OpenTopo")
                             Toast.makeText(this, "Mode Relief activé", Toast.LENGTH_SHORT).show()
                         }
-                        1 -> {
+                        3 -> {
                             mapFragment.setMapStyle("OSM_Standard")
                             Toast.makeText(this, "Mode Standard activé", Toast.LENGTH_SHORT).show()
                         }
@@ -528,17 +587,49 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         btnCenter.startAnimation(blinkAnimation)
     }
 
-    private fun stopBlinkingCenterButton() {
-        btnCenter.clearAnimation()
+    // ✅ DÉMARRE OU RELANCE LE COMPTE À REBOURS DE 30 SECONDES
+    private fun startAutoCenterResetTimer() {
+        // 1. On annule le minuteur précédent s'il était déjà en cours
+        autoCenterResetJob?.cancel()
+
+        // 2. On lance un nouveau décompte de 30 secondes
+        autoCenterResetJob = lifecycleScope.launch {
+            kotlinx.coroutines.delay(30_000L) // 30 000 millisecondes = 30 secondes
+
+            // 3. Si les 30 secondes se sont écoulées sans être annulées :
+            if (isFollowing || isRecording) {
+                stopBlinkingCenterButton()
+                if (::mapFragment.isInitialized) {
+                    mapFragment.isAutoCenterActive = true
+                    mapFragment.centerOnUser() // On ramène la caméra sur le VTT !
+                }
+                Toast.makeText(this@MainActivity, "Recentrage automatique réactivé", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
-    // ✅ GESTION DE L'INTERACTION CARTE
+    private fun stopBlinkingCenterButton() {
+        btnCenter.clearAnimation()
+        // ✅ SÉCURITÉ : Dès qu'on arrête de clignoter (clic manuel, arrêt du suivi, etc.),
+        // on coupe immédiatement le minuteur de 30 secondes !
+        autoCenterResetJob?.cancel()
+        autoCenterResetJob = null
+    }
+
+    // ✅ GESTION DE L'INTERACTION CARTE (Avec minuterie de 30s)
     fun handleMapInteraction() {
         if (isUserTouchingScreen) {
             if (isFollowing || isRecording) {
-                if (::mapFragment.isInitialized && mapFragment.isAutoCenterActive) {
-                    mapFragment.isAutoCenterActive = false
-                    runOnUiThread { startBlinkingCenterButton() }
+                if (::mapFragment.isInitialized) {
+                    // Si le mode auto était encore actif, on le coupe et on fait clignoter
+                    if (mapFragment.isAutoCenterActive) {
+                        mapFragment.isAutoCenterActive = false
+                        runOnUiThread { startBlinkingCenterButton() }
+                    }
+
+                    // ⏱️ DANS TOUS LES CAS : On lance ou on relance le chrono de 30 secondes
+                    // à chaque fois que le doigt touche ou déplace la carte !
+                    startAutoCenterResetTimer()
                 }
             }
         }

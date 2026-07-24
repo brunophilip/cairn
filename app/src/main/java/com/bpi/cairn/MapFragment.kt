@@ -603,13 +603,43 @@ class MapFragment : Fragment() {
         locationOverlay.disableMyLocation()
     }
 
+    // 1. Plan IGN V2 Topo (La carte de référence gratuite et ouverte de l'IGN)
+    private val IgnCartesTileSource = object : org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase(
+        "IGN_Cartes",
+        0, 19, 256, ".png", // ⚠️ ATTENTION : Il faut impérativement du .png ici !
+        arrayOf("https://data.geopf.fr/wmts?")
+    ) {
+        override fun getTileURLString(pMapTileIndex: Long): String {
+            val zoom = org.osmdroid.util.MapTileIndex.getZoom(pMapTileIndex)
+            val x = org.osmdroid.util.MapTileIndex.getX(pMapTileIndex)
+            val y = org.osmdroid.util.MapTileIndex.getY(pMapTileIndex)
+            // ✅ Utilisation de la couche ouverte PLANIGNV2 en image/png :
+            return "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&FORMAT=image/png&TILEMATRIXSET=PM&TILEMATRIX=$zoom&TILEROW=$y&TILECOL=$x"
+        }
+    }
+
+    // 2. Photos Aériennes IGN (Vue satellite haute résolution)
+    private val IgnPhotoTileSource = object : org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase(
+        "IGN_Photo",
+        0, 19, 256, ".jpeg", // Les photos satellites restent en .jpeg
+        arrayOf("https://data.geopf.fr/wmts?")
+    ) {
+        override fun getTileURLString(pMapTileIndex: Long): String {
+            val zoom = org.osmdroid.util.MapTileIndex.getZoom(pMapTileIndex)
+            val x = org.osmdroid.util.MapTileIndex.getX(pMapTileIndex)
+            val y = org.osmdroid.util.MapTileIndex.getY(pMapTileIndex)
+            return "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM&TILEMATRIX=$zoom&TILEROW=$y&TILECOL=$x"
+        }
+    }
+
     // ─── CHANGEMENT DU FOND DE CARTE ─────────────────────────────────────────
     fun setMapStyle(styleName: String) {
         when (styleName) {
+            "IGN_Cartes" -> mapView.setTileSource(IgnCartesTileSource)
+            "IGN_Photo" -> mapView.setTileSource(IgnPhotoTileSource)
             "OpenTopo" -> mapView.setTileSource(TileSourceFactory.OpenTopo)
             "OSM_Standard" -> mapView.setTileSource(TileSourceFactory.MAPNIK)
         }
-        // Force la carte à se redessiner immédiatement avec les nouvelles tuiles
         mapView.invalidate()
     }
 }
