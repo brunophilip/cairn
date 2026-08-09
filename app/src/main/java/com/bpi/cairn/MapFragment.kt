@@ -96,6 +96,11 @@ class MapFragment : Fragment() {
             controller.setCenter(GeoPoint(46.603354, 1.888334))
         }
 
+        // ✅ 1. ACTIVER LA ROTATION MANUELLE DE LA CARTE
+        val rotationGestureOverlay = org.osmdroid.views.overlay.gestures.RotationGestureOverlay(mapView)
+        rotationGestureOverlay.isEnabled = true
+        mapView.overlays.add(rotationGestureOverlay)
+
         mapView.addMapListener(object : MapListener {
             override fun onScroll(event: ScrollEvent?): Boolean {
                 (activity as? MainActivity)?.forceAutoBrightness()
@@ -348,6 +353,9 @@ class MapFragment : Fragment() {
 
     private val sensorListener = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent?) {
+
+            if (!isAutoCenterActive) return
+
             // On ne pivote que si on est en mode "verrouillé"
             if (!(isFollowing || shouldLockCamera) || event == null) return
 
@@ -537,35 +545,41 @@ class MapFragment : Fragment() {
     }
 
     private fun createUserArrowBitmap(): Bitmap {
-        val size = 100 // Augmenté de 64 à 100 pour une flèche plus grande
+        val size = 110 // ⬇️ Taille réduite pour un compromis parfait (ni trop grosse, ni trop petite)
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
 
-        // Couleur Mauve (Purple 600)
-        val mauveColor = Color.parseColor("#8E24AA")
+        // 🎨 Les couleurs : Intérieur Jaune-Orangé / Contour Bleu
+        val fillColor = Color.parseColor("#FF9800")
+        val strokeColor = Color.parseColor("#0000FF")
 
+        // 🖌️ Pinceau pour l'intérieur
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = mauveColor
+            color = fillColor
+            style = Paint.Style.FILL
         }
 
+        // 📐 Forme de la flèche (proportions recalculées pour la taille 110)
         val path = Path().apply {
-            // Dessin d'une flèche plus imposante
-            moveTo(size / 2f, 5f)               // Pointe
-            lineTo(size.toFloat() - 5f, size.toFloat() - 5f) // Bas droite
-            lineTo(size / 2f, size.toFloat() - 25f)          // Creux arrière
-            lineTo(5f, size.toFloat() - 5f)     // Bas gauche
+            moveTo(size / 2f, 6f)                             // Pointe
+            lineTo(size.toFloat() - 6f, size.toFloat() - 6f)  // Bas droite
+            lineTo(size / 2f, size.toFloat() - 28f)           // Creux arrière
+            lineTo(6f, size.toFloat() - 6f)                   // Bas gauche
             close()
         }
 
-        // Dessin du corps de la flèche
+        // Dessin de l'intérieur
         canvas.drawPath(path, paint)
 
-        // Ajout d'un contour blanc épais pour qu'elle ressorte sur la carte
+        // 🖌️ Pinceau pour le contour
         paint.apply {
-            color = Color.WHITE
+            color = strokeColor
             style = Paint.Style.STROKE
-            strokeWidth = 6f
+            strokeWidth = 6f // Contour légèrement affiné pour ne pas "manger" le jaune
+            strokeJoin = Paint.Join.ROUND // Garde les angles doux
         }
+
+        // Dessin du contour
         canvas.drawPath(path, paint)
 
         return bmp
