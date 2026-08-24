@@ -234,29 +234,6 @@
         </LinearLayout>
 
         <LinearLayout
-            android:id="@+id/btnFollow"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:gravity="center">
-            <ImageView
-                android:id="@+id/btnFollowIcon"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:src="@drawable/ic_btn_play"
-                android:background="@drawable/btn_circle_background"
-                android:backgroundTint="#1A3A1A"
-                android:padding="10dp" />
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Suivi"
-                android:textColor="#B0BEC5"
-                android:textSize="9sp" />
-        </LinearLayout>
-
-        <LinearLayout
             android:id="@+id/btnRecord"
             android:layout_width="0dp"
             android:layout_weight="1"

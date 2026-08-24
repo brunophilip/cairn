@@ -11,8 +11,8 @@ android {
         applicationId = "com.bpi.cairn"
         minSdk = 24
         targetSdk = 35
-        versionCode = 33
-        versionName = "3.3"
+        versionCode = 34
+        versionName = "3.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

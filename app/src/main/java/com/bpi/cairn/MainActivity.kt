@@ -41,15 +41,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var btnElevation: LinearLayout
     private lateinit var btnCenter: LinearLayout
     private lateinit var screenOverlay: View
-    private lateinit var btnFollow: LinearLayout
-    private lateinit var btnFollowIcon: ImageView
     private lateinit var btnRecord: LinearLayout
     private lateinit var btnRecordIcon: ImageView
     private lateinit var btnRecordLabel: TextView
     private var isRecording = false
     private val recordedPoints = mutableListOf<Location>()
-
-    private var isFollowing = false
 
     private lateinit var mapFragment: MapFragment
     private val gpxParser = GpxParser
@@ -136,7 +132,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (intent?.action == Intent.ACTION_VIEW) {
             val uri = intent.data ?: return
 
-            forceStopFollowing()
             forceStopRecording()
 
             lifecycleScope.launch(Dispatchers.IO) {
@@ -253,8 +248,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         btnSelectTrace = findViewById(R.id.btnSelectTrace)
         btnElevation   = findViewById(R.id.btnElevation)
         btnCenter      = findViewById(R.id.btnCenter)
-        btnFollow      = findViewById(R.id.btnFollow)
-        btnFollowIcon  = findViewById(R.id.btnFollowIcon)
         btnRecord = findViewById(R.id.btnRecord)
         btnRecordIcon = findViewById(R.id.btnRecordIcon)
         btnRecordLabel = findViewById(R.id.btnRecordLabel)
@@ -350,15 +343,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                         speedRect.inset(-50, -50)
 
                         if (speedRect.contains(ev.x.toInt(), ev.y.toInt())) {
-                            if (isFollowing || isRecording) {
-                                isLargeSpeedVisible = !isLargeSpeedVisible
-                                txtLargeSpeed.visibility = if (isLargeSpeedVisible) View.VISIBLE else View.GONE
-                                if (isLargeSpeedVisible) {
-                                    txtLargeSpeed.text = txtSpeed.text.toString().replace(" km/h", "")
-                                }
-                            } else {
-                                Toast.makeText(this@MainActivity, "Démarrez le suivi ou l'enregistrement pour afficher la vitesse", Toast.LENGTH_SHORT).show()
+
+                            isLargeSpeedVisible = !isLargeSpeedVisible
+                            txtLargeSpeed.visibility = if (isLargeSpeedVisible) View.VISIBLE else View.GONE
+                            if (isLargeSpeedVisible) {
+                                txtLargeSpeed.text = txtSpeed.text.toString().replace(" km/h", "")
                             }
+
                             return super.dispatchTouchEvent(ev)
                         }
 
@@ -495,32 +486,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 .show()
         }
 
-        btnFollow.setOnClickListener {
-            isFollowing = !isFollowing
-            btnFollowIcon.setImageResource(if (isFollowing) R.drawable.ic_btn_stop else R.drawable.ic_btn_play)
-
-            if (isFollowing) {
-                mapFragment.resetStats()
-                updateStatsUI(0f, 0f)
-            }
-            mapFragment.updateCameraMode(isFollowing, isRecording)
-
-            if (!isFollowing) {
-                stopBlinkingCenterButton()
-                if (::mapFragment.isInitialized) {
-                    mapFragment.isAutoCenterActive = true
-                }
-            }
-
-            if (!isFollowing && !isRecording) {
-                isLargeSpeedVisible = false
-                txtLargeSpeed.visibility = View.GONE
-            }
-        }
-
         btnRecord.setOnClickListener {
             isRecording = !isRecording
-            mapFragment.updateCameraMode(isFollowing, isRecording)
+            mapFragment.updateCameraMode(true, isRecording)
 
             if (isRecording) {
                 mapFragment.resetStats()
@@ -530,14 +498,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 btnRecordLabel.text = "Stop"
 
                 val intent = Intent(this, GpsService::class.java).apply {
-                    action = GpsService.ACTION_START // Vérifiez si votre constante s'appelle ACTION_START ou simplement "START"
+                    action = GpsService.ACTION_START
                 }
                 startService(intent)
 
                 mapFragment.startRecording { location ->
                     recordedPoints.add(location)
-
-                    // 🔴 2. AJOUT DU POINT SUR LA CARTE EN TEMPS RÉEL
                     mapFragment.addPointToRecordedTrack(location)
                 }
                 Toast.makeText(this, "Enregistrement démarré", Toast.LENGTH_SHORT).show()
@@ -554,7 +520,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     mapFragment.isAutoCenterActive = true
                 }
 
-                val input = android.widget.EditText(this).apply { hint = "Ma rando du dimanche" }
+                // ✅ L'EditText EST CRÉÉ ICI, À L'INTÉRIEUR DU CLIC "STOP" !
+                val sdf = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.FRANCE)
+                val defaultName = "Rando-${sdf.format(java.util.Date())}"
+
+                val input = android.widget.EditText(this).apply {
+                    setText(defaultName)
+                    setSelection(defaultName.length)
+                }
 
                 androidx.appcompat.app.AlertDialog.Builder(this)
                     .setTitle("Enregistrer la trace")
@@ -562,17 +535,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     .setView(input)
                     .setCancelable(false)
                     .setPositiveButton("Enregistrer") { _, _ ->
-                        val name = input.text.toString().ifBlank { "Trace_${System.currentTimeMillis()}" }
+                        val name = input.text.toString().ifBlank { defaultName }
                         saveRecordedTrack(name)
                     }
                     .setNegativeButton("Ignorer") { _, _ -> recordedPoints.clear() }
                     .show()
             }
 
-            if (!isFollowing && !isRecording) {
-                isLargeSpeedVisible = false
-                txtLargeSpeed.visibility = View.GONE
-            }
+            isLargeSpeedVisible = false
+            txtLargeSpeed.visibility = View.GONE
         }
     }
 
@@ -597,14 +568,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             kotlinx.coroutines.delay(30_000L) // 30 000 millisecondes = 30 secondes
 
             // 3. Si les 30 secondes se sont écoulées sans être annulées :
-            if (isFollowing || isRecording) {
-                stopBlinkingCenterButton()
-                if (::mapFragment.isInitialized) {
-                    mapFragment.isAutoCenterActive = true
-                    mapFragment.centerOnUser() // On ramène la caméra sur le VTT !
-                }
-                Toast.makeText(this@MainActivity, "Recentrage automatique réactivé", Toast.LENGTH_SHORT).show()
+            stopBlinkingCenterButton()
+            if (::mapFragment.isInitialized) {
+                mapFragment.isAutoCenterActive = true
+                mapFragment.centerOnUser() // On ramène la caméra sur le VTT !
             }
+            Toast.makeText(this@MainActivity, "Recentrage automatique réactivé", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -619,18 +588,16 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     // ✅ GESTION DE L'INTERACTION CARTE (Avec minuterie de 30s)
     fun handleMapInteraction() {
         if (isUserTouchingScreen) {
-            if (isFollowing || isRecording) {
-                if (::mapFragment.isInitialized) {
-                    // Si le mode auto était encore actif, on le coupe et on fait clignoter
-                    if (mapFragment.isAutoCenterActive) {
-                        mapFragment.isAutoCenterActive = false
-                        runOnUiThread { startBlinkingCenterButton() }
-                    }
-
-                    // ⏱️ DANS TOUS LES CAS : On lance ou on relance le chrono de 30 secondes
-                    // à chaque fois que le doigt touche ou déplace la carte !
-                    startAutoCenterResetTimer()
+            if (::mapFragment.isInitialized) {
+                // Si le mode auto était encore actif, on le coupe et on fait clignoter
+                if (mapFragment.isAutoCenterActive) {
+                    mapFragment.isAutoCenterActive = false
+                    runOnUiThread { startBlinkingCenterButton() }
                 }
+
+                // ⏱️ DANS TOUS LES CAS : On lance ou on relance le chrono de 30 secondes
+                // à chaque fois que le doigt touche ou déplace la carte !
+                startAutoCenterResetTimer()
             }
         }
     }
@@ -671,22 +638,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         return name
     }
 
-    private fun forceStopFollowing() {
-        if (isFollowing) {
-            isFollowing = false
-            btnFollowIcon.setImageResource(R.drawable.ic_btn_play)
-            if (::mapFragment.isInitialized) {
-                mapFragment.updateCameraMode(isFollowing, isRecording)
-            }
-        }
-        if (!isFollowing && !isRecording) {
-            isLargeSpeedVisible = false
-            txtLargeSpeed.visibility = View.GONE
-            stopBlinkingCenterButton()
-            if (::mapFragment.isInitialized) mapFragment.isAutoCenterActive = true
-        }
-    }
-
     private fun forceStopRecording() {
         if (isRecording) {
             isRecording = false
@@ -701,10 +652,17 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 mapFragment.clearRecordedTrack()
                 stopBlinkingCenterButton()
                 mapFragment.isAutoCenterActive = true
-                mapFragment.updateCameraMode(isFollowing, isRecording)
+                mapFragment.updateCameraMode(true, isRecording)
             }
 
-            val input = android.widget.EditText(this).apply { hint = "Ma rando du dimanche" }
+            // ✅ CRÉATION D'UN NOUVEL EDITTEXT POUR L'ARRÊT FORCÉ
+            val sdf = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.FRANCE)
+            val defaultName = "Rando-${sdf.format(java.util.Date())}"
+
+            val input = android.widget.EditText(this).apply {
+                setText(defaultName)
+                setSelection(defaultName.length)
+            }
 
             androidx.appcompat.app.AlertDialog.Builder(this)
                 .setTitle("Enregistrer la trace en cours")
@@ -712,23 +670,21 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 .setView(input)
                 .setCancelable(false)
                 .setPositiveButton("Enregistrer") { _, _ ->
-                    val name = input.text.toString().ifBlank { "Trace_${System.currentTimeMillis()}" }
+                    val name = input.text.toString().ifBlank { defaultName }
                     saveRecordedTrack(name)
                 }
                 .setNegativeButton("Ignorer") { _, _ -> recordedPoints.clear() }
                 .show()
         }
 
-        if (!isFollowing && !isRecording) {
-            isLargeSpeedVisible = false
-            txtLargeSpeed.visibility = View.GONE
-            stopBlinkingCenterButton()
-            if (::mapFragment.isInitialized) mapFragment.isAutoCenterActive = true
-        }
+        isLargeSpeedVisible = false
+        txtLargeSpeed.visibility = View.GONE
+        stopBlinkingCenterButton()
+        if (::mapFragment.isInitialized) mapFragment.isAutoCenterActive = true
     }
 
     private fun loadTrack(file: File) {
-        forceStopFollowing()
+
         forceStopRecording()
 
         lifecycleScope.launch(Dispatchers.IO) {

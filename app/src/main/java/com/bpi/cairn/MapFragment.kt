@@ -354,10 +354,7 @@ class MapFragment : Fragment() {
     private val sensorListener = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent?) {
 
-            if (!isAutoCenterActive) return
-
-            // On ne pivote que si on est en mode "verrouillé"
-            if (!(isFollowing || shouldLockCamera) || event == null) return
+            if (!isAutoCenterActive || event == null) return
 
             val speed = lastLocation?.speed ?: 0f
             if (speed < 1.0f && event.sensor.type == Sensor.TYPE_ROTATION_VECTOR) {
@@ -617,18 +614,22 @@ class MapFragment : Fragment() {
         locationOverlay.disableMyLocation()
     }
 
-    // 1. Plan IGN V2 Topo (La carte de référence gratuite et ouverte de l'IGN)
+    // 1. Le vrai SCAN 25 (Cartes topographiques classiques avec sentiers roses)
     private val IgnCartesTileSource = object : org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase(
-        "IGN_Cartes",
-        0, 19, 256, ".png", // ⚠️ ATTENTION : Il faut impérativement du .png ici !
-        arrayOf("https://data.geopf.fr/wmts?")
+        "IGN_Scan25_Vrai",
+        0,
+        16, // ⚠️ Toujours limiter à 16. Au-delà, OSMdroid zoome numériquement (parfait pour le VTT)
+        256,
+        ".jpeg",
+        arrayOf("https://data.geopf.fr/private/wmts?") // ✅ L'accès privé de l'IGN
     ) {
         override fun getTileURLString(pMapTileIndex: Long): String {
             val zoom = org.osmdroid.util.MapTileIndex.getZoom(pMapTileIndex)
             val x = org.osmdroid.util.MapTileIndex.getX(pMapTileIndex)
             val y = org.osmdroid.util.MapTileIndex.getY(pMapTileIndex)
-            // ✅ Utilisation de la couche ouverte PLANIGNV2 en image/png :
-            return "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&FORMAT=image/png&TILEMATRIXSET=PM&TILEMATRIX=$zoom&TILEROW=$y&TILECOL=$x"
+
+            // ✅ Ajout de la clé "apikey=ign_scan_ws" obligatoire pour cette couche :
+            return "https://data.geopf.fr/private/wmts?apikey=ign_scan_ws&SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.MAPS&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM&TILEMATRIX=$zoom&TILEROW=$y&TILECOL=$x"
         }
     }
 
