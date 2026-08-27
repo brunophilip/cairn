@@ -143,6 +143,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                         withContext(Dispatchers.Main) {
                             if (track != null && ::mapFragment.isInitialized) {
                                 mapFragment.setTrack(track)
+                                mapFragment.zoomToTrack(track)
+
+                                mapFragment.isAutoCenterActive = false
+                                runOnUiThread { startBlinkingCenterButton() }
+                                startAutoCenterResetTimer()
+
                                 currentTrack = track
                                 btnElevation.alpha = 1f
                                 saveTrackToInternalList(track, gpxString)
@@ -410,14 +416,24 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         sensorManager.unregisterListener(this)
     }
 
-    fun updateStatsUI(speed: Float, distanceKm: Float) {
+    // ✅ 1. La vitesse matérielle en temps réel (mise à jour en continu)
+    fun updateRealTimeSpeed(speedMs: Float) {
         runOnUiThread {
-            val speedValueStr = String.format(java.util.Locale.FRANCE, "%.1f", speed)
+            // Conversion des m/s en km/h
+            val speedKmH = speedMs * 3.6f
+            val speedValueStr = String.format(java.util.Locale.FRANCE, "%.1f", speedKmH)
+
             txtSpeed.text = "$speedValueStr km/h"
-            txtDistance.text = String.format(java.util.Locale.FRANCE, "%.2f km", distanceKm)
             if (isLargeSpeedVisible) {
                 txtLargeSpeed.text = speedValueStr
             }
+        }
+    }
+
+    // ✅ 2. La distance (mise à jour uniquement pendant un enregistrement)
+    fun updateDistanceUI(distanceKm: Float) {
+        runOnUiThread {
+            txtDistance.text = String.format(java.util.Locale.FRANCE, "%.2f km", distanceKm)
         }
     }
 
@@ -488,11 +504,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         btnRecord.setOnClickListener {
             isRecording = !isRecording
-            mapFragment.updateCameraMode(true, isRecording)
+            mapFragment.updateCameraMode(isRecording)
 
             if (isRecording) {
                 mapFragment.resetStats()
-                updateStatsUI(0f, 0f)
+                updateDistanceUI(0f)
                 recordedPoints.clear()
                 btnRecordIcon.setImageResource(R.drawable.ic_btn_stop)
                 btnRecordLabel.text = "Stop"
@@ -652,7 +668,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 mapFragment.clearRecordedTrack()
                 stopBlinkingCenterButton()
                 mapFragment.isAutoCenterActive = true
-                mapFragment.updateCameraMode(true, isRecording)
+                mapFragment.updateCameraMode(isRecording)
             }
 
             // ✅ CRÉATION D'UN NOUVEL EDITTEXT POUR L'ARRÊT FORCÉ
@@ -695,6 +711,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                         currentTrack = track
                         mapFragment.postOnMap {
                             mapFragment.setTrack(track)
+                            mapFragment.zoomToTrack(track)
+
+                            mapFragment.isAutoCenterActive = false
+                            runOnUiThread { startBlinkingCenterButton() }
+                            startAutoCenterResetTimer()
+
                             btnElevation.alpha = 1f
                             Toast.makeText(this@MainActivity, "Trace chargée : ${track.name}", Toast.LENGTH_SHORT).show()
                         }

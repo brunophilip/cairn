@@ -5,23 +5,27 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.location.Location
 import android.os.Build
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.*
-import com.google.android.gms.location.LocationRequest
-import android.content.pm.ServiceInfo
 
 class GpsService : Service() {
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
+
+    // ✅ Ajout du gestionnaire d'énergie pour contrer le mode veille
+    private var wakeLock: PowerManager.WakeLock? = null
 
     companion object {
         private const val CHANNEL_ID = "gps_tracking_channel"
@@ -38,6 +42,13 @@ class GpsService : Service() {
     override fun onCreate() {
         super.onCreate()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+
+        // ✅ Préparation du verrouillage du processeur (WakeLock partiel)
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "Cairn::GpsRecordWakeLock"
+        )
 
         // Que faire quand on reçoit un nouveau point GPS
         locationCallback = object : LocationCallback() {
@@ -66,7 +77,7 @@ class GpsService : Service() {
         createNotificationChannel()
         val notification = createNotification()
 
-        // ✅ LA SÉCURITÉ POUR ANDROID 10 à 14+
+        // LA SÉCURITÉ POUR ANDROID 10 à 14+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
@@ -76,6 +87,10 @@ class GpsService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+
+        // ✅ On VERROUILLE le processeur au démarrage de l'enregistrement
+        // (La limite de 12 heures est une sécurité pour ne pas drainer la batterie en cas de plantage inattendu)
+        wakeLock?.acquire(12 * 60 * 60 * 1000L)
 
         requestLocationUpdates()
     }
@@ -102,6 +117,10 @@ class GpsService : Service() {
     private fun stopTracking() {
         fusedLocationClient.removeLocationUpdates(locationCallback)
         stopForeground(STOP_FOREGROUND_REMOVE)
+
+        // ✅ On LIBÈRE le processeur à l'arrêt de l'enregistrement
+        wakeLock?.let { if (it.isHeld) it.release() }
+
         stopSelf()
     }
 
@@ -124,6 +143,12 @@ class GpsService : Service() {
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
         }
+    }
+
+    override fun onDestroy() {
+        // ✅ Double sécurité : on libère le WakeLock si le service est détruit par le système
+        wakeLock?.let { if (it.isHeld) it.release() }
+        super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

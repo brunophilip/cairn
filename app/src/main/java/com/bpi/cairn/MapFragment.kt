@@ -59,7 +59,6 @@ class MapFragment : Fragment() {
     private var isFirstFix = true
 
     // États de contrôle
-    private var isFollowing = false
     private var shouldLockCamera = false // Est mis à true pendant l'enregistrement
 
     private var totalDistance = 0f
@@ -179,12 +178,12 @@ class MapFragment : Fragment() {
 
     // ─── LOGIQUE DE CAMÉRA (CENTRALISÉE) ────────────────────────────────────
 
-    fun updateCameraMode(following: Boolean, recording: Boolean) {
-        this.isFollowing = following
+    fun updateCameraMode(recording: Boolean) {
+
         this.shouldLockCamera = recording
 
         // Si on active l'un des deux modes, on recadre immédiatement
-        if (isFollowing || shouldLockCamera) {
+        if (isAutoCenterActive || shouldLockCamera) {
             lastLocation?.let { updateMapPosition(it) }
         } else {
             // Si on coupe tout, on remet le Nord en haut
@@ -196,8 +195,9 @@ class MapFragment : Fragment() {
         // La ligne magique qui empêche le GPS de forcer le recentrage
         if (!isAutoCenterActive) return
 
-        val geoPoint = GeoPoint(location.latitude, location.longitude)
+        val geoPoint = GeoPoint(location)
         val speed = location.speed
+        (activity as? MainActivity)?.updateRealTimeSpeed(speed)
 
         if (speed >= 1.0f && location.hasBearing()) {
             // 🚵‍♂️ EN MOUVEMENT : On suit le cap GPS
@@ -211,7 +211,7 @@ class MapFragment : Fragment() {
 
     fun centerOnUser() {
         lastLocation?.let {
-            mapView.controller.animateTo(GeoPoint(it.latitude, it.longitude))
+            mapView.controller.animateTo(GeoPoint(it))
         }
     }
 
@@ -224,7 +224,7 @@ class MapFragment : Fragment() {
 
     fun addPointToRecordedTrack(location: Location) {
         if (!isAdded || view == null) return
-        val geoPoint = GeoPoint(location.latitude, location.longitude)
+        val geoPoint = GeoPoint(location)
         recordedTrackPolyline.addPoint(geoPoint)
         mapView.invalidate()
     }
@@ -248,7 +248,7 @@ class MapFragment : Fragment() {
     private fun updateTrackProgress(location: Location) {
         val track = currentTrack ?: return
         val points = track.points
-        val userGeo = GeoPoint(location.latitude, location.longitude)
+        val userGeo = GeoPoint(location)
 
         var closest = trackProgress
         var minDist = Double.MAX_VALUE
@@ -286,6 +286,7 @@ class MapFragment : Fragment() {
             locationUpdateMinTime = 2000
         }
 
+        // Création de l'unique overlay (Flèche + Logique)
         locationOverlay = object : MyLocationNewOverlay(gpsProvider, mapView) {
             override fun onLocationChanged(location: Location?, source: IMyLocationProvider?) {
                 location ?: return
@@ -304,27 +305,31 @@ class MapFragment : Fragment() {
 
                 recordingCallback?.invoke(location)
 
+                // ✅ 1. Mise à jour de la vitesse EN TEMPS RÉEL (même sans enregistrer)
+                if (location.hasSpeed()) {
+                    (activity as? MainActivity)?.updateRealTimeSpeed(location.speed)
+                } else {
+                    (activity as? MainActivity)?.updateRealTimeSpeed(0f)
+                }
+
                 activity?.runOnUiThread {
                     if (isFirstFix) {
                         mapView.controller.setZoom(16.0)
-                        mapView.controller.setCenter(GeoPoint(location.latitude, location.longitude))
+                        mapView.controller.setCenter(GeoPoint(location))
                         isFirstFix = false
                     }
 
                     updateTrackProgress(location)
 
-                    if (isFollowing || shouldLockCamera) {
+                    // ✅ 2. Cadrage et Distance pendant le suivi/enregistrement
+                    if (isAutoCenterActive) {
                         updateMapPosition(location)
+                    }
 
-                        // ✅ 1. Calcul de la vitesse avec un seuil "anti-dérive"
+                    if (shouldLockCamera) {
                         var speedKmH = location.speed * 3.6f
+                        if (speedKmH < 1.5f) speedKmH = 0f
 
-                        // Si la vitesse est inférieure à 1.5 km/h, on force à 0
-                        if (speedKmH < 1.5f) {
-                            speedKmH = 0f
-                        }
-
-                        // ✅ 2. On n'ajoute la distance QUE si on est en mouvement
                         if (speedKmH > 0f) {
                             lastLocationForDistance?.let {
                                 totalDistance += it.distanceTo(location)
@@ -332,18 +337,14 @@ class MapFragment : Fragment() {
                         }
                         lastLocationForDistance = location
 
-                        // 3. Mise à jour de l'interface
-                        (activity as? MainActivity)?.updateStatsUI(speedKmH, totalDistance / 1000f)
+                        (activity as? MainActivity)?.updateDistanceUI(totalDistance / 1000f)
                     }
                 }
             }
         }
 
-        val userArrow = createUserArrowBitmap()
-        locationOverlay.setDirectionArrow(userArrow, userArrow)
-        locationOverlay.setPersonIcon(userArrow)
-        locationOverlay.setPersonAnchor(0.5f, 0.5f)
-        locationOverlay.setDirectionAnchor(0.5f, 0.5f)
+        // Ajout de la flèche personnalisée
+        locationOverlay.setDirectionArrow(createUserArrowBitmap(), createUserArrowBitmap())
 
         locationOverlay.enableMyLocation()
         mapView.overlays.add(locationOverlay)
@@ -491,7 +492,7 @@ class MapFragment : Fragment() {
         }
         mapView.overlays.add(startMarker)
 
-        // 2. Création de la ligne "Restante" (Bleu)
+        // 3. Création de la ligne "Restante" (Bleu)
         remainingPolyline = Polyline(mapView).apply {
             outlinePaint.color = Color.parseColor("#0000FF")
             outlinePaint.strokeWidth = 10f
@@ -500,7 +501,7 @@ class MapFragment : Fragment() {
             infoWindow = null
         }
 
-        // 3. Création de la ligne "Parcourue" (Rouge)
+        // 4. Création de la ligne "Parcourue" (Rouge)
         completedPolyline = Polyline(mapView).apply {
             outlinePaint.color = Color.RED
             outlinePaint.strokeWidth = 10f
@@ -509,26 +510,12 @@ class MapFragment : Fragment() {
             infoWindow = null
         }
 
-        // 4. Ajout des overlays à la carte
+        // 5. Ajout des overlays à la carte
         mapView.overlays.add(completedPolyline)
         mapView.overlays.add(remainingPolyline)
 
-        // 5. Ajout des flèches de direction
+        // 6. Ajout des flèches de direction
         addDirectionArrows(track.points)
-
-        // 6. Cadrage automatique de la carte sur la trace
-        if (points.isNotEmpty()) {
-            val minLat = track.points.minOf { it.lat }
-            val maxLat = track.points.maxOf { it.lat }
-            val minLon = track.points.minOf { it.lon }
-            val maxLon = track.points.maxOf { it.lon }
-
-            val boundingBox = BoundingBox(maxLat, maxLon, minLat, minLon)
-
-            mapView.post {
-                mapView.zoomToBoundingBox(boundingBox, true, 150)
-            }
-        }
 
         mapView.invalidate() // Rafraîchissement final
 
@@ -612,6 +599,17 @@ class MapFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         locationOverlay.disableMyLocation()
+    }
+
+    fun zoomToTrack(track: com.bpi.cairn.gpx.GpxTrack) {
+        if (track.points.isEmpty()) return
+
+        // Calcule la boîte englobante (BoundingBox) de tous les points de la trace
+        val boundingBox = org.osmdroid.util.BoundingBox.fromGeoPoints(
+            track.points.map { GeoPoint(it.lat, it.lon) }
+        )
+        // Zoom sur la trace avec une petite marge (1.2x) pour ne pas coller aux bords de l'écran
+        mapView.zoomToBoundingBox(boundingBox.increaseByScale(1.2f), true)
     }
 
     // 1. Le vrai SCAN 25 (Cartes topographiques classiques avec sentiers roses)
