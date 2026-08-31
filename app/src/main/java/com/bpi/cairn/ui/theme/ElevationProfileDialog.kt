@@ -16,7 +16,7 @@ import kotlin.math.roundToInt
 class ElevationProfileDialog(
     context: Context,
     private val track: GpxTrack,
-    private val currentDistance: Double? = null // Ajout de la distance courante
+    private val currentIndex: Int? = null // ✅ On reçoit maintenant l'index depuis MainActivity
 ) : Dialog(context) {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -30,8 +30,13 @@ class ElevationProfileDialog(
         val chart = findViewById<ElevationChartView>(R.id.elevationChart)
         chart.setTrack(track)
 
-        // On envoie la position au graphique
-        currentDistance?.let { chart.setCurrentPosition(it) }
+        // ✅ On convertit l'index exact du cycliste en distance (mètres) pour le graphique
+        if (currentIndex != null) {
+            val distances = track.cumulativeDistances()
+            if (currentIndex in distances.indices) {
+                chart.setCurrentPosition(distances[currentIndex])
+            }
+        }
 
         val totalKm = track.totalDistanceMeters / 1000.0
         val gain    = track.elevationGain.roundToInt()
@@ -75,36 +80,34 @@ class ElevationChartView(context: Context, attrs: android.util.AttributeSet? = n
     private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#424242")
         strokeWidth = 1f
-        pathEffect = DashPathEffect(floatArrayOf(10f, 10f), 0f) // Ligne pointillée
+        pathEffect = DashPathEffect(floatArrayOf(10f, 10f), 0f)
     }
-    // Pinceau pour l'axe Y (aligné à droite)
     private val labelPaintY = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#E0E0E0")
         textSize = 30f
         textAlign = Paint.Align.RIGHT
     }
-    // Pinceau pour l'axe X (centré)
     private val labelPaintX = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#E0E0E0")
         textSize = 30f
         textAlign = Paint.Align.CENTER
     }
-    // Pinceaux pour la position
+
+    // ✅ Pinceaux pour la position (PASSÉS EN ROUGE)
     private val positionLinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#42A5F5") // Bleu
+        color = Color.RED
         style = Paint.Style.STROKE
         strokeWidth = 4f
     }
     private val positionDotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#42A5F5")
+        color = Color.RED
         style = Paint.Style.FILL
     }
 
-    // ─── Marges asymétriques pour la lisibilité ───
-    private val padLeft = 130f   // Plus d'espace pour les altitudes (ex: "2500m")
+    private val padLeft = 130f
     private val padRight = 40f
     private val padTop = 40f
-    private val padBottom = 80f  // Espace pour les km en bas
+    private val padBottom = 80f
 
     fun setTrack(t: GpxTrack) {
         track = t
@@ -156,19 +159,16 @@ class ElevationChartView(context: Context, attrs: android.util.AttributeSet? = n
         for (i in 0..steps) {
             val ele = minEle + eleRange * i / steps
             val y = yFor(ele)
-
-            // Ligne de grille horizontale
             canvas.drawLine(padLeft, y, w - padRight, y, gridPaint)
-            // Texte aligné juste avant l'axe
             canvas.drawText("${ele.roundToInt()}m", padLeft - 10f, y + 10f, labelPaintY)
         }
 
         // 3. Axes X et Textes (Kilométrage)
-        canvas.drawLine(padLeft, padTop, padLeft, h - padBottom, axisPaint) // Axe Y
-        canvas.drawLine(padLeft, h - padBottom, w - padRight, h - padBottom, axisPaint) // Axe X
+        canvas.drawLine(padLeft, padTop, padLeft, h - padBottom, axisPaint)
+        canvas.drawLine(padLeft, h - padBottom, w - padRight, h - padBottom, axisPaint)
 
         val kmSteps = (totalDist / 1000).toInt().coerceAtLeast(1)
-        val kmInterval = maxOf(1, kmSteps / 5) // Affiche max 5 ou 6 graduations pour ne pas surcharger
+        val kmInterval = maxOf(1, kmSteps / 5)
 
         for (km in 0..kmSteps step kmInterval) {
             val dist = km * 1000.0
@@ -178,13 +178,12 @@ class ElevationChartView(context: Context, attrs: android.util.AttributeSet? = n
             canvas.drawLine(x, h - padBottom, x, h - padBottom + 10f, axisPaint)
         }
 
-        // 4. Dessiner la position actuelle si disponible
+        // 4. Dessiner la position actuelle avec le point et la ligne rouge
         currentDist?.let { cDist ->
             if (cDist in 0.0..totalDist) {
                 val posX = xFor(cDist)
                 var dotY = h - padBottom
 
-                // Trouver l'altitude exacte pour dessiner le point
                 for (i in 0 until distances.size - 1) {
                     if (cDist >= distances[i] && cDist <= distances[i+1]) {
                         val segmentDist = distances[i+1] - distances[i]
@@ -195,17 +194,16 @@ class ElevationChartView(context: Context, attrs: android.util.AttributeSet? = n
                     }
                 }
 
-                // Ligne verticale bleue
+                // Ligne verticale rouge
                 canvas.drawLine(posX, padTop, posX, h - padBottom, positionLinePaint)
-                // Point bleu sur la courbe
-                canvas.drawCircle(posX, dotY, 12f, positionDotPaint)
+                // Point rouge sur la courbe
+                canvas.drawCircle(posX, dotY, 15f, positionDotPaint) // Légèrement agrandi (15f au lieu de 12f) pour plus de lisibilité en roulant
             }
         }
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
-        // On augmente un peu la hauteur relative (0.55 au lieu de 0.45) pour compenser les marges
         setMeasuredDimension(w, (w * 0.55f).toInt())
     }
 }

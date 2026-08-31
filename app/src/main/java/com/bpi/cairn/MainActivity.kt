@@ -132,6 +132,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (intent?.action == Intent.ACTION_VIEW) {
             val uri = intent.data ?: return
 
+            // On arrête seulement l'enregistrement, la notion de "following" n'existe plus
             forceStopRecording()
 
             lifecycleScope.launch(Dispatchers.IO) {
@@ -142,17 +143,23 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
                         withContext(Dispatchers.Main) {
                             if (track != null && ::mapFragment.isInitialized) {
-                                mapFragment.setTrack(track)
-                                mapFragment.zoomToTrack(track)
 
-                                mapFragment.isAutoCenterActive = false
-                                runOnUiThread { startBlinkingCenterButton() }
-                                startAutoCenterResetTimer()
+                                // ✅ LE SECRET EST ICI : On s'assure que la carte est prête avant de dessiner !
+                                mapFragment.postOnMap {
+                                    mapFragment.setTrack(track)
+                                    mapFragment.zoomToTrack(track) // On cadre la trace
 
-                                currentTrack = track
-                                btnElevation.alpha = 1f
-                                saveTrackToInternalList(track, gpxString)
-                                Toast.makeText(this@MainActivity, "Importation réussie : ${track.name}", Toast.LENGTH_SHORT).show()
+                                    currentTrack = track
+                                    btnElevation.alpha = 1f
+                                    saveTrackToInternalList(track, gpxString)
+
+                                    // On coupe l'auto-centrage et on lance la minuterie de 30s
+                                    mapFragment.isAutoCenterActive = false
+                                    startBlinkingCenterButton()
+                                    startAutoCenterResetTimer()
+
+                                    Toast.makeText(this@MainActivity, "Trace ouverte : ${track.name}", Toast.LENGTH_SHORT).show()
+                                }
                             }
                         }
                     }
@@ -191,24 +198,24 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
             // 1. Rédaction du mode d'emploi (mis à jour avec Cartes IGN et icône Play)
             val docContent = """
-                <b>🚵‍♂️ 1. Suivi & Navigation</b><br>
+                <b>🚵‍♂️ 1. Navigation intelligente</b><br>
                 • <b>Trace :</b> Chargez un parcours GPX depuis votre appareil.<br>
-                • <b>Suivre (icône Play) :</b> Centre la caméra sur votre position et oriente la carte dans le sens de la marche.<br>
+                • <b>Suivi auto :</b> La carte est centrée sur votre position par défaut et s'oriente dans le sens de la marche de manière automatique.<br>
                 • <b>Exploration :</b> Touchez ou glissez la carte pour observer les environs. Le recentrage automatique se coupe et le bouton <i>Centrer</i> se met à clignoter.<br>
-                • <b>Retour auto :</b> Sans action de votre part, le recentrage automatique se réactive tout seul après 30 secondes d'inactivité !<br><br>
+                • <b>Retour auto :</b> Sans action de votre part, le recentrage automatique se réactive tout seul après 30 secondes d'inactivité, ou d'un simple appui sur le bouton clignotant !<br><br>
                 
                 <b>🔴 2. Enregistrement GPS</b><br>
                 • Appuyez sur <b>Enreg.</b> pour enregistrer votre trace en direct (dessinée en rouge sur l'écran).<br>
-                • <b>Mode Poche :</b> Grâce au service d'arrière-plan, l'enregistrement continue parfaitement sans coupure, même si vous éteignez l'écran ou glissez le téléphone dans votre poche.<br><br>
+                • <b>Mode Poche :</b> Grâce au service d'arrière-plan, l'enregistrement continue sans coupure, même si vous éteignez l'écran ou glissez le téléphone dans votre poche.<br><br>
                 
                 <b>🗺️ 3. Fonds de carte IGN & Relief</b><br>
-                • Le bouton <b>Carte</b> (à droite) permet de basculer instantanément entre les Cartes IGN Topo (style SCAN 25), les photos Satellites IGN, OpenTopoMap (relief) et OSM Standard.<br>
+                • Le bouton <b>Carte</b> permet de basculer instantanément entre les Cartes IGN Topo (SCAN 25), les photos Satellites IGN, OpenTopoMap (relief) et OSM Standard.<br>
                 • <b>Hors-ligne :</b> Les zones affichées à l'écran sont automatiquement mémorisées dans le cache pour rester accessibles sans réseau en pleine nature.<br><br>
                 
                 <b>⚡ 4. Ergonomie & Batterie</b><br>
-                • <b>Vitesse géante :</b> Appuyez sur le bloc vitesse/distance en bas à gauche pour faire apparaître (ou masquer) votre vitesse en grand format en haut de l'écran.<br>
+                • <b>Vitesse géante :</b> Appuyez sur le bloc vitesse/distance en bas à gauche pour afficher (ou masquer) votre vitesse en grand format.<br>
                 • <b>Luminosité Éco :</b> Touchez la zone centrale de la carte pour basculer rapidement entre la luminosité normale et le mode économie d'énergie.<br>
-                • <b>Capteur de proximité :</b> L'écran se coupe automatiquement si le capteur supérieur est recouvert (téléphone retourné ou dans une poche).<br><br>
+                • <b>Capteur de proximité :</b> L'écran s'éteint automatiquement si le capteur supérieur est recouvert (téléphone retourné ou dans une poche).<br><br>
                 <small><i>Application conçue par Bruno PHILIP — v$versionName</i></small>
             """.trimIndent()
 
@@ -454,7 +461,16 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         btnElevation.setOnClickListener {
             currentTrack?.let { track ->
-                ElevationProfileDialog(this, track).show()
+                // On vérifie si on est actuellement sur la trace
+                val indexOnTrack = if (::mapFragment.isInitialized && mapFragment.isUserOnTrack) {
+                    mapFragment.currentTrackProgressIndex
+                } else {
+                    null // null signifie "Ne pas dessiner le point rouge"
+                }
+
+                // On envoie l'index à la boîte de dialogue
+                ElevationProfileDialog(this, track, indexOnTrack).show()
+
             } ?: Toast.makeText(this, "Aucune trace chargée", Toast.LENGTH_SHORT).show()
         }
 
@@ -508,7 +524,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
             if (isRecording) {
                 mapFragment.resetStats()
-                updateDistanceUI(0f)
+
                 recordedPoints.clear()
                 btnRecordIcon.setImageResource(R.drawable.ic_btn_stop)
                 btnRecordLabel.text = "Stop"
