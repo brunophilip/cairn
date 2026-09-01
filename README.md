@@ -1,5 +1,9 @@
 # Cairn
 
+[![Télécharger l'APK](https://img.shields.io/badge/T%C3%A9l%C3%A9charger-APK-brightgreen?style=for-the-badge&logo=android)](https://github.com/brunophilip/cairn/releases/latest)
+
+📲 **[Télécharger la dernière version](https://github.com/brunophilip/cairn/releases/latest)**
+
 ## 🚵‍♂️ 1. Navigation intelligente
 * **Trace :** Chargez un parcours GPX depuis votre appareil.
 * **Suivi auto :** La carte est centrée sur votre position par défaut et s'oriente dans le sens de la marche de manière automatique.
